@@ -1,0 +1,28 @@
+name: Update Version Badges
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.plugin.js'
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update version badges
+        run: |
+          LG_VERSION=$(grep -oP '@version \K[0-9.]+' LaTeXGenerator/LaTeXGenerator.plugin.js)
+
+          sed -i "s|\[latexgenerator-version-badge\]: https://img.shields.io/badge/version-[0-9.]*-brightgreen|\[latexgenerator-version-badge\]: https://img.shields.io/badge/version-${LG_VERSION}-brightgreen|" README.md
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git diff --quiet README.md || (git add README.md && git commit -m "Update version badges" && git push)
