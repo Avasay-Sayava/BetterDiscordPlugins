@@ -147,11 +147,11 @@ const CSS = `/*css*/
   border-color: var(--bd-brand-hover);
 }
 
-.bd-slider-wrap:hover > .bd-slider-track {
+.latex-generator-modal .bd-slider-wrap:hover > .bd-slider-track {
   background-image: linear-gradient(var(--bd-brand-hover),var(--bd-brand-hover));
 }
 
-.bd-slider-input:active ~ .bd-slider-track {
+.latex-generator-modal .bd-slider-input:active ~ .bd-slider-track {
   background-image: linear-gradient(var(--bd-brand-active),var(--bd-brand-active));
 }
 
