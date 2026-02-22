@@ -20,7 +20,13 @@ const DiscordClasses = {
 
 const Plugin = {
   NAME: "LaTeX Generator",
+  KEY: "LaTeXGenerator",
   PATCH_ID: "latex-generator",
+};
+
+const API = {
+  NAME: "CodeCogs LaTeX API",
+  URL: "https://latex.codecogs.com/",
 };
 
 const TOAST_TYPES = {
@@ -257,11 +263,11 @@ const CSS = `/*css*/
 
 class SettingsManager {
   static getSetting(key, fallback) {
-    return Data.load(Plugin.NAME, key) ?? fallback;
+    return Data.load(Plugin.KEY, key) ?? fallback;
   }
 
   static setSetting(key, value) {
-    Data.save(Plugin.NAME, key, value);
+    Data.save(Plugin.KEY, key, value);
   }
 
   static getSavedData() {
@@ -271,12 +277,20 @@ class SettingsManager {
   static getAutoPreview() {
     return this.getSetting("autoPreview", false);
   }
+
+  static hasAgreedToTerms() {
+    return this.getSetting("agreedToTerms", false);
+  }
+
+  static setAgreedToTerms(value) {
+    this.setSetting("agreedToTerms", value);
+  }
 }
 
 class ImageProcessor {
   static generateApiRequest(latex, dpi) {
     const payload = `\\dpi{${dpi}} \\color{black} ${latex}`;
-    return `https://latex.codecogs.com/png.latex?${encodeURIComponent(payload)}`;
+    return `${API.URL}png.latex?${encodeURIComponent(payload)}`;
   }
 
   static hexToRgba(hex) {
@@ -532,7 +546,7 @@ class UIManager {
             "aria-label": "Insert LaTeX",
             onMouseEnter: onMouseEnter,
             onMouseLeave: onMouseLeave,
-            onClick: UIManager.openGenerationModal,
+            onClick: UIManager.handleChatBarClick,
           },
           createElement(
             "div",
@@ -545,6 +559,52 @@ class UIManager {
             }),
           ),
         ),
+    );
+  }
+
+  static handleChatBarClick() {
+    console.log(
+      `[${Plugin.NAME}] terms agreement: ${SettingsManager.hasAgreedToTerms()}`,
+    );
+
+    if (SettingsManager.hasAgreedToTerms()) {
+      UIManager.openGenerationModal();
+    } else {
+      UIManager.openTermsModal();
+    }
+  }
+
+  static openTermsModal(openGeneration = true) {
+    UI.showConfirmationModal(
+      "API Usage Agreement",
+      createElement(
+        "div",
+        { style: { color: "var(--text-normal)" } },
+        createElement("p", {
+          style: { marginBottom: "10px" },
+          dangerouslySetInnerHTML: {
+            __html: `By proceeding, you acknowledge that this plugin utilizes a third-party external API (<a href="${API.URL}" target="_blank">${API.NAME}</a>) to render LaTeX equations.`,
+          },
+        }),
+        createElement(
+          "p",
+          { style: { marginBottom: "10px" } },
+          "Please be advised that the utilization of this service is entirely at your own risk. The developer of this plugin, as well as the BetterDiscord staff, assume no liability or responsibility for any potential issues, data handling practices, or service interruptions that may arise from its use.",
+        ),
+        createElement(
+          "p",
+          {},
+          "Do you accept these terms and wish to continue?",
+        ),
+      ),
+      {
+        confirmText: "I Agree",
+        cancelText: "Cancel",
+        onConfirm: () => {
+          SettingsManager.setAgreedToTerms(true);
+          if (openGeneration) UIManager.openGenerationModal();
+        },
+      },
     );
   }
 
@@ -576,6 +636,13 @@ class UIManager {
       settings: [
         {
           type: "switch",
+          id: "agreedToTerms",
+          name: "Agreed to Terms",
+          note: "Whether you have agreed to the terms of service.",
+          value: SettingsManager.hasAgreedToTerms(),
+        },
+        {
+          type: "switch",
           id: "autoPreview",
           name: "Auto-Preview",
           note: "Automatically update the LaTeX preview as you type.",
@@ -583,7 +650,15 @@ class UIManager {
         },
       ],
       onChange: (_, id, value) => {
-        SettingsManager.setSetting(id, value);
+        switch (id) {
+          case "agreedToTerms":
+            if (value) {
+              UIManager.openTermsModal(false);
+              break;
+            }
+          default:
+            SettingsManager.setSetting(id, value);
+        }
       },
     });
   }
