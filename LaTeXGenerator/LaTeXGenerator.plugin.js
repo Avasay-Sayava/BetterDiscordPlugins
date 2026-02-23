@@ -33,6 +33,8 @@ const TOAST_TYPES = {
   SUCCESS: "success",
   ERROR: "error",
   INFO: "info",
+  WARNING: "warning",
+  DEFAULT: "default",
 };
 
 const CHAT_BAR_TYPES = ["normal", "sidebar"];
@@ -58,6 +60,12 @@ const LATEX_ICON = `<!--html-->
 <!--!html-->`;
 
 const CSS = `/*css*/
+.latex-generator-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .latex-generator-modal .bd-color-picker-swatch-item {
   width: 20px;
   height: 20px;
@@ -84,7 +92,6 @@ const CSS = `/*css*/
   overflow: hidden;
   border: 1px solid var(--input-border-default);
   border-radius: 8px;
-  margin-bottom: 20px;
 }
 
 .latex-generator-preview-parent {
@@ -98,6 +105,8 @@ const CSS = `/*css*/
 .latex-generator-preview-container {
   display: flex;
   align-items: center;
+  gap: 20px;
+  padding: 20px 0;
   min-width: 100%;
   width: max-content;
 }
@@ -112,8 +121,18 @@ const CSS = `/*css*/
 }
 
 .latex-generator-preview-container > * {
-  margin: 20px auto;
   flex-shrink: 0;
+  margin: 0 auto;
+}
+
+.latex-generator-preview-img {
+  opacity: 0;
+  display: block;
+}
+
+.latex-generator-preview-empty {
+  color: var(--text-muted);
+  display: block;
 }
 
 .latex-generator-size-section {
@@ -258,6 +277,22 @@ const CSS = `/*css*/
   background-color: var(--input-border-default);
   color: var(--text-muted);
   cursor: not-allowed;
+}
+
+.latex-generator-terms-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  color: var(--text-normal);
+}
+
+.latex-generator-terms-container p {
+  margin: 0;
+  padding: 0;
+}
+
+.latex-generator-terms-link {
+  color: var(--text-link);
 }
 /*!css*/`;
 
@@ -422,6 +457,18 @@ class UIManager {
       { className: "latex-generator-modal" },
 
       createElement(
+        "style",
+        {},
+        `
+        .latex-generator-dynamic-mask {
+          background-color: ${color};
+          -webkit-mask-image: url("${fetched}");
+          mask-image: url("${fetched}");
+        }
+        `,
+      ),
+
+      createElement(
         "div",
         { className: "latex-generator-preview" },
         createElement(
@@ -436,20 +483,16 @@ class UIManager {
                   { className: "latex-generator-preview-wrapper" },
                   createElement("img", {
                     src: fetched,
-                    style: { opacity: 0, display: "block" },
+                    className: "latex-generator-preview-img",
                   }),
                   createElement("div", {
-                    className: "latex-generator-preview-mask",
-                    style: {
-                      backgroundColor: color,
-                      WebkitMaskImage: `url("${fetched}")`,
-                      maskImage: `url("${fetched}")`,
-                    },
+                    className:
+                      "latex-generator-preview-mask latex-generator-dynamic-mask",
                   }),
                 )
               : createElement(
                   "span",
-                  { style: { color: "var(--text-muted)", display: "block" } },
+                  { className: "latex-generator-preview-empty" },
                   autoPreview
                     ? "Preview will appear here..."
                     : "Press to generate preview...",
@@ -563,10 +606,6 @@ class UIManager {
   }
 
   static handleChatBarClick() {
-    console.log(
-      `[${Plugin.NAME}] terms agreement: ${SettingsManager.hasAgreedToTerms()}`,
-    );
-
     if (SettingsManager.hasAgreedToTerms()) {
       UIManager.openGenerationModal();
     } else {
@@ -579,16 +618,25 @@ class UIManager {
       "API Usage Agreement",
       createElement(
         "div",
-        { style: { color: "var(--text-normal)" } },
-        createElement("p", {
-          style: { marginBottom: "10px" },
-          dangerouslySetInnerHTML: {
-            __html: `By proceeding, you acknowledge that this plugin utilizes a third-party external API (<a href="${API.URL}" target="_blank">${API.NAME}</a>) to render LaTeX equations.`,
-          },
-        }),
+        { className: "latex-generator-terms-container" },
         createElement(
           "p",
-          { style: { marginBottom: "10px" } },
+          {},
+          `By proceeding, you acknowledge that this plugin utilizes a third-party external API (`,
+          createElement(
+            "a",
+            {
+              href: API.URL,
+              target: "_blank",
+              className: "latex-generator-terms-link",
+            },
+            API.NAME,
+          ),
+          `) to render LaTeX equations.`,
+        ),
+        createElement(
+          "p",
+          {},
           "Please be advised that the utilization of this service is entirely at your own risk. The developer of this plugin, as well as the BetterDiscord staff, assume no liability or responsibility for any potential issues, data handling practices, or service interruptions that may arise from its use.",
         ),
         createElement(
@@ -603,6 +651,9 @@ class UIManager {
         onConfirm: () => {
           SettingsManager.setAgreedToTerms(true);
           if (openGeneration) UIManager.openGenerationModal();
+        },
+        onCancel: () => {
+          SettingsManager.setAgreedToTerms(false);
         },
       },
     );
