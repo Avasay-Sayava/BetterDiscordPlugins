@@ -282,7 +282,7 @@ const CSS = `/*css*/
   display: flex;
   flex-direction: column;
   gap: 15px;
-  color: var(--text-normal);
+  color: var(--text-default);
 }
 
 .latex-generator-terms-container p {
