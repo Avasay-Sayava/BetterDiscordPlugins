@@ -683,7 +683,7 @@ class UIManager {
     );
   }
 
-  static SettingsPanel() {
+  static SettingsModal() {
     const [renderKey, setRenderKey] = useState(0);
 
     return createElement(
@@ -763,18 +763,28 @@ class ChatBarManager {
   }
 }
 
+class StyleManager {
+  static inject() {
+    DOM.addStyle(Plugin.PATCH_ID, CSS);
+  }
+
+  static remove() {
+    DOM.removeStyle(Plugin.PATCH_ID);
+  }
+}
+
 module.exports = class LaTeXGeneratorPlugin {
   start() {
-    DOM.addStyle(Plugin.PATCH_ID, CSS);
+    StyleManager.inject();
     ChatBarManager.patch();
   }
 
   stop() {
-    DOM.removeStyle(Plugin.PATCH_ID);
+    StyleManager.remove();
     ChatBarManager.unpatch();
   }
 
   getSettingsPanel() {
-    return createElement(UIManager.SettingsPanel);
+    return createElement(UIManager.SettingsModal);
   }
 };
