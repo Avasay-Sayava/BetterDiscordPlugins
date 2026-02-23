@@ -609,11 +609,11 @@ class UIManager {
     if (SettingsManager.hasAgreedToTerms()) {
       UIManager.openGenerationModal();
     } else {
-      UIManager.openTermsModal();
+      UIManager.openTermsModal({ onConfirm: UIManager.openGenerationModal });
     }
   }
 
-  static openTermsModal(openGeneration = true) {
+  static openTermsModal({ onConfirm, onCancel } = {}) {
     UI.showConfirmationModal(
       "API Usage Agreement",
       createElement(
@@ -650,10 +650,11 @@ class UIManager {
         cancelText: "Cancel",
         onConfirm: () => {
           SettingsManager.setAgreedToTerms(true);
-          if (openGeneration) UIManager.openGenerationModal();
+          if (onConfirm) onConfirm();
         },
         onCancel: () => {
           SettingsManager.setAgreedToTerms(false);
+          if (onCancel) onCancel();
         },
       },
     );
@@ -682,36 +683,44 @@ class UIManager {
     );
   }
 
-  static buildSettingsPanel() {
-    return UI.buildSettingsPanel({
-      settings: [
-        {
-          type: "switch",
-          id: "agreedToTerms",
-          name: "Agreed to Terms",
-          note: "Whether you have agreed to the terms of service.",
-          value: SettingsManager.hasAgreedToTerms(),
+  static SettingsPanel() {
+    const [renderKey, setRenderKey] = useState(0);
+
+    return createElement(
+      "div",
+      { key: renderKey },
+      UI.buildSettingsPanel({
+        settings: [
+          {
+            type: "switch",
+            id: "agreedToTerms",
+            name: "Agreed to Terms",
+            note: "Whether you have agreed to the terms of service.",
+            value: SettingsManager.hasAgreedToTerms(),
+          },
+          {
+            type: "switch",
+            id: "autoPreview",
+            name: "Auto-Preview",
+            note: "Automatically update the LaTeX preview as you type.",
+            value: SettingsManager.getAutoPreview(),
+          },
+        ],
+        onChange: (_, id, value) => {
+          switch (id) {
+            case "agreedToTerms":
+              if (value) {
+                UIManager.openTermsModal({
+                  onCancel: () => setRenderKey((k) => k + 1),
+                });
+                break;
+              }
+            default:
+              SettingsManager.setSetting(id, value);
+          }
         },
-        {
-          type: "switch",
-          id: "autoPreview",
-          name: "Auto-Preview",
-          note: "Automatically update the LaTeX preview as you type.",
-          value: SettingsManager.getAutoPreview(),
-        },
-      ],
-      onChange: (_, id, value) => {
-        switch (id) {
-          case "agreedToTerms":
-            if (value) {
-              UIManager.openTermsModal(false);
-              break;
-            }
-          default:
-            SettingsManager.setSetting(id, value);
-        }
-      },
-    });
+      }),
+    );
   }
 }
 
@@ -766,6 +775,6 @@ module.exports = class LaTeXGeneratorPlugin {
   }
 
   getSettingsPanel() {
-    return UIManager.buildSettingsPanel();
+    return createElement(UIManager.SettingsPanel);
   }
 };
