@@ -5,7 +5,6 @@
  * @description Adds a button to the chat bar to generate and copy LaTeX equations as images.
  * @version 2.1.1
  * @source https://github.com/Avasay-Sayava/BetterDiscordPlugins/blob/main/LaTeXGenerator/LaTeXGenerator.plugin.js
- * @updateUrl https://raw.githubusercontent.com/Avasay-Sayava/BetterDiscordPlugins/main/LaTeXGenerator/LaTeXGenerator.plugin.js
  */
 
 const { React, Components, Webpack, Data, UI, DOM, Patcher } = BdApi;
