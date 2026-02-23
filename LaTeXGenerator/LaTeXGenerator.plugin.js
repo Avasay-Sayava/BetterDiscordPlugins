@@ -193,7 +193,7 @@ const CSS = `/*css*/
 
 .latex-generator-textarea {
   background-color: var(--input-background-default);
-  color: var(--text-normal);
+  color: var(--text-default);
   border: 1px solid var(--input-border-default);
   border-radius: 8px 8px 0 8px;
   padding: 10px;
