@@ -554,7 +554,7 @@ class UIManager {
             className:
               "latex-generator-inline-section latex-generator-size-section",
           },
-          createElement("h1", {}, "Size"),
+          createElement("h1", {}, "DPI"),
           createElement(SliderInput, {
             min: 50,
             max: 300,
