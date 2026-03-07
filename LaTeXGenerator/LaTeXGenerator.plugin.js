@@ -3,7 +3,7 @@
  * @author Avasay-Sayava
  * @authorId 812235988659077120
  * @description Adds a button to the chat bar to generate and copy LaTeX equations as images.
- * @version 2.1.2
+ * @version 2.1.3
  * @source https://github.com/Avasay-Sayava/BetterDiscordPlugins/blob/main/LaTeXGenerator/LaTeXGenerator.plugin.js
  */
 
@@ -439,6 +439,19 @@ class UIManager {
       return () => clearTimeout(timer);
     }, [latex, dpi, autoPreview]);
 
+    useEffect(() => {
+      DOM.addStyle(
+        `${Plugin.PATCH_ID}-dynamic-mask`,
+        `
+        .latex-generator-dynamic-mask {
+          background-color: ${color};
+          -webkit-mask-image: url("${fetched}");
+          mask-image: url("${fetched}");
+        }
+        `,
+      );
+    }, [color, fetched]);
+
     const handlePreview = () => {
       if (!canPreview || autoPreview) return;
       setPreviewLatex(latex);
@@ -454,18 +467,6 @@ class UIManager {
     return createElement(
       "div",
       { className: "latex-generator-modal" },
-
-      createElement(
-        "style",
-        {},
-        `
-        .latex-generator-dynamic-mask {
-          background-color: ${color};
-          -webkit-mask-image: url("${fetched}");
-          mask-image: url("${fetched}");
-        }
-        `,
-      ),
 
       createElement(
         "div",
