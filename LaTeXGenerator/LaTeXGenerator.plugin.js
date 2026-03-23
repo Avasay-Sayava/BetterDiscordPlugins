@@ -3,7 +3,7 @@
  * @author Avasay-Sayava
  * @authorId 812235988659077120
  * @description Adds a button to the chat bar to generate and copy LaTeX equations as images.
- * @version 2.1.4
+ * @version 2.1.5
  * @source https://github.com/Avasay-Sayava/BetterDiscordPlugins/blob/main/LaTeXGenerator/LaTeXGenerator.plugin.js
  */
 
@@ -721,7 +721,7 @@ class ChatBarManager {
     const ChatBarButtons = Webpack.getBySource(
       "type",
       "showAllButtons",
-      "paymentsBlocked",
+      "promotionsByType",
     )?.A;
 
     if (!ChatBarButtons) {
