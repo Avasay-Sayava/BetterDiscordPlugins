@@ -3,11 +3,11 @@
  * @author Avasay-Sayava
  * @authorId 812235988659077120
  * @description Adds a button to the chat bar to generate and copy LaTeX equations as images.
- * @version 2.1.5
+ * @version 2.1.6
  * @source https://github.com/Avasay-Sayava/BetterDiscordPlugins/blob/main/LaTeXGenerator/LaTeXGenerator.plugin.js
  */
 
-const { React, Components, Webpack, Data, UI, DOM, Patcher } = BdApi;
+const { React, Components, Webpack, Data, UI: BdUI, DOM, Patcher } = BdApi;
 const { useState, useEffect, createElement } = React;
 const { Tooltip, ColorInput, SliderInput } = Components;
 
@@ -38,7 +38,7 @@ const TOAST_TYPES = {
 
 const CHAT_BAR_TYPES = ["normal", "sidebar"];
 
-const DEFAULT_SETTINGS = {
+const DEFAULT_LATEX_SETTINGS = {
   latex: "",
   dpi: 150,
   color: "#FFFFFF",
@@ -52,9 +52,24 @@ const DEFAULT_COLORS = [
   0x5d686d, 0x2c2c2c,
 ];
 
-const LATEX_ICON = `<svg viewBox="0 -9 9 9" width="24" height="24" fill="none" stroke="currentColor" stroke-width="0.05" xmlns="http://www.w3.org/2000/svg">
+const SETTINGS_KEYS = {
+  TERMS: "agreedToTerms",
+  AUTO_PREVIEW: "autoPreview",
+  LATEX_SETTINGS: "settings",
+};
+
+const DEFAULT_SETTINGS = {
+  [SETTINGS_KEYS.TERMS]: false,
+  [SETTINGS_KEYS.AUTO_PREVIEW]: false,
+  [SETTINGS_KEYS.LATEX_SETTINGS]: DEFAULT_LATEX_SETTINGS,
+};
+
+const LATEX_ICON = `
+<!--html-->
+<svg viewBox="0 -9 9 9" width="24" height="24" fill="none" stroke="currentColor" stroke-width="0.05" xmlns="http://www.w3.org/2000/svg">
   <path d="M2.15193-1.111831C2.797509-2.116065 3.000747-2.881196 3.156164-3.514819C3.574595-5.164633 4.028892-6.599253 4.770112-7.424159C4.913574-7.579577 5.009215-7.687173 5.391781-7.687173C6.216687-7.687173 6.240598-6.862267 6.240598-6.694894C6.240598-6.479701 6.180822-6.312329 6.180822-6.252553C6.180822-6.168867 6.252553-6.168867 6.264508-6.168867C6.455791-6.168867 6.77858-6.300374 7.07746-6.515567C7.292653-6.682939 7.400249-6.802491 7.400249-7.292653C7.400249-7.938232 7.065504-8.428394 6.396015-8.428394C6.01345-8.428394 4.961395-8.332752 3.789788-7.149191C2.833375-6.168867 2.271482-4.016936 2.044334-3.120299C1.829141-2.295392 1.733499-1.924782 1.374844-1.207472C1.291158-1.06401 .980324-.537983 .812951-.382565C.490162-.083686 .37061 .131507 .37061 .191283C.37061 .215193 .394521 .263014 .478207 .263014C.526027 .263014 .777086 .215193 1.08792 .011955C1.291158-.107597 1.315068-.131507 1.590037-.418431C2.187796-.406476 2.606227-.298879 3.359402-.083686C3.969116 .083686 4.578829 .263014 5.188543 .263014C6.156912 .263014 7.137235-.466252 7.519801-.992279C7.758904-1.315068 7.830635-1.613948 7.830635-1.649813C7.830635-1.733499 7.758904-1.733499 7.746949-1.733499C7.555666-1.733499 7.268742-1.601993 7.065504-1.458531C6.742715-1.255293 6.718804-1.183562 6.647073-.980324C6.587298-.789041 6.515567-.6934 6.467746-.621669C6.372105-.478207 6.360149-.478207 6.180822-.478207C5.606974-.478207 5.009215-.657534 4.220174-.872727C3.88543-.968369 3.227895-1.159651 2.630137-1.159651C2.47472-1.159651 2.307347-1.147696 2.15193-1.111831Z" fill="currentColor"/>
 </svg>
+<!--!html-->
 `;
 
 const CSS = `/*css*/
@@ -294,29 +309,13 @@ const CSS = `/*css*/
 }
 /*!css*/`;
 
-class SettingsManager {
-  static getSetting(key, fallback) {
+class Settings {
+  static get(key, fallback=DEFAULT_SETTINGS[key]) {
     return Data.load(Plugin.KEY, key) ?? fallback;
   }
 
-  static setSetting(key, value) {
+  static set(key, value) {
     Data.save(Plugin.KEY, key, value);
-  }
-
-  static getSavedData() {
-    return this.getSetting("settings", DEFAULT_SETTINGS);
-  }
-
-  static getAutoPreview() {
-    return this.getSetting("autoPreview", false);
-  }
-
-  static hasAgreedToTerms() {
-    return this.getSetting("agreedToTerms", false);
-  }
-
-  static setAgreedToTerms(value) {
-    this.setSetting("agreedToTerms", value);
   }
 }
 
@@ -368,24 +367,24 @@ class ImageProcessor {
         ctx.putImageData(imageData, 0, 0);
         canvas.toBlob((blob) => {
           navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          UIManager.toast("Image copied!", TOAST_TYPES.SUCCESS);
+          UI.toast("Image copied!", TOAST_TYPES.SUCCESS);
         }, "image/png");
       };
     } catch (err) {
       console.error(err);
-      UIManager.toast("Failed to process image.", TOAST_TYPES.ERROR);
+      UI.toast("Failed to process image.", TOAST_TYPES.ERROR);
     }
   }
 }
-
-class UIManager {
+``
+class UI {
   static toast(message, type = TOAST_TYPES.INFO) {
-    UI.showToast(`${Plugin.NAME}: ${message}`, { type });
+    BdUI.showToast(`${Plugin.NAME}: ${message}`, { type });
   }
 
   static LatexModalContent({ stateRef }) {
-    const savedData = SettingsManager.getSavedData();
-    const autoPreview = SettingsManager.getAutoPreview();
+    const savedData = Settings.get(SETTINGS_KEYS.LATEX_SETTINGS);
+    const autoPreview = Settings.get(SETTINGS_KEYS.AUTO_PREVIEW);
 
     const [latex, setLatex] = useState(savedData.latex);
     const [dpi, setDpi] = useState(savedData.dpi);
@@ -414,7 +413,7 @@ class UIManager {
       };
 
       const timer = setTimeout(() => {
-        SettingsManager.setSetting("settings", { latex, dpi, color });
+        Settings.set(SETTINGS_KEYS.LATEX_SETTINGS, { latex, dpi, color });
       }, 500);
       return () => clearTimeout(timer);
     }, [latex, dpi, color, fetched, stateRef]);
@@ -581,7 +580,7 @@ class UIManager {
             "aria-label": "Insert LaTeX",
             onMouseEnter: onMouseEnter,
             onMouseLeave: onMouseLeave,
-            onClick: UIManager.handleChatBarClick,
+            onClick: UI.handleChatBarClick,
           },
           createElement(
             "div",
@@ -598,15 +597,15 @@ class UIManager {
   }
 
   static handleChatBarClick() {
-    if (SettingsManager.hasAgreedToTerms()) {
-      UIManager.openGenerationModal();
+    if (Settings.get(SETTINGS_KEYS.TERMS)) {
+      UI.openGenerationModal();
     } else {
-      UIManager.openTermsModal({ onConfirm: UIManager.openGenerationModal });
+      UI.openTermsModal({ onConfirm: UI.openGenerationModal });
     }
   }
 
   static openTermsModal({ onConfirm, onCancel } = {}) {
-    UI.showConfirmationModal(
+    BdUI.showConfirmationModal(
       "API Usage Agreement",
       createElement(
         "div",
@@ -641,11 +640,11 @@ class UIManager {
         confirmText: "I Agree",
         cancelText: "Cancel",
         onConfirm: () => {
-          SettingsManager.setAgreedToTerms(true);
+          Settings.set(SETTINGS_KEYS.TERMS, true);
           if (onConfirm) onConfirm();
         },
         onCancel: () => {
-          SettingsManager.setAgreedToTerms(false);
+          Settings.set(SETTINGS_KEYS.TERMS, false);
           if (onCancel) onCancel();
         },
       },
@@ -657,16 +656,16 @@ class UIManager {
       current: { latex: "", dpi: 150, color: "#FFFFFF", fetched: "" },
     };
 
-    UI.showConfirmationModal(
+    BdUI.showConfirmationModal(
       "Generate LaTeX Image",
-      createElement(UIManager.LatexModalContent, { stateRef: stateRef }),
+      createElement(UI.LatexModalContent, { stateRef: stateRef }),
       {
         confirmText: "Copy",
         cancelText: "Cancel",
         size: "bd-modal-medium",
         onConfirm: () => {
           if (!stateRef.current.latex) {
-            UIManager.toast("No image to copy!", TOAST_TYPES.ERROR);
+            UI.toast("No image to copy!", TOAST_TYPES.ERROR);
             return;
           }
           ImageProcessor.copyToClipboard(stateRef.current);
@@ -681,34 +680,34 @@ class UIManager {
     return createElement(
       "div",
       { key: renderKey },
-      UI.buildSettingsPanel({
+      BdUI.buildSettingsPanel({
         settings: [
           {
             type: "switch",
-            id: "agreedToTerms",
+            id: SETTINGS_KEYS.TERMS,
             name: "Agreed to Terms",
             note: "Whether you have agreed to the terms of service.",
-            value: SettingsManager.hasAgreedToTerms(),
+            value: Settings.get(SETTINGS_KEYS.TERMS),
           },
           {
             type: "switch",
-            id: "autoPreview",
+            id: SETTINGS_KEYS.AUTO_PREVIEW,
             name: "Auto-Preview",
             note: "Automatically update the LaTeX preview as you type.",
-            value: SettingsManager.getAutoPreview(),
+            value: Settings.get(SETTINGS_KEYS.AUTO_PREVIEW),
           },
         ],
         onChange: (_, id, value) => {
           switch (id) {
-            case "agreedToTerms":
+            case SETTINGS_KEYS.TERMS:
               if (value) {
-                UIManager.openTermsModal({
+                UI.openTermsModal({
                   onCancel: () => setRenderKey((k) => k + 1),
                 });
                 break;
               }
             default:
-              SettingsManager.setSetting(id, value);
+              Settings.set(id, value);
           }
         },
       }),
@@ -716,7 +715,7 @@ class UIManager {
   }
 }
 
-class ChatBarManager {
+class Chatbar {
   static patch() {
     const ChatBarButtons = Webpack.getBySource(
       "type",
@@ -725,7 +724,7 @@ class ChatBarManager {
     )?.A;
 
     if (!ChatBarButtons) {
-      UIManager.toast(
+      UI.toast(
         "Failed to find chat bar to inject the button",
         TOAST_TYPES.ERROR,
       );
@@ -743,7 +742,7 @@ class ChatBarManager {
       }
 
       res.props.children.unshift(
-        createElement(UIManager.ChatBarButton, {
+        createElement(UI.ChatBarButton, {
           key: "latex-generator-button",
         }),
       );
@@ -755,7 +754,7 @@ class ChatBarManager {
   }
 }
 
-class StyleManager {
+class Style {
   static inject() {
     DOM.addStyle(Plugin.PATCH_ID, CSS);
   }
@@ -767,16 +766,16 @@ class StyleManager {
 
 module.exports = class LaTeXGeneratorPlugin {
   start() {
-    StyleManager.inject();
-    ChatBarManager.patch();
+    Style.inject();
+    Chatbar.patch();
   }
 
   stop() {
-    StyleManager.remove();
-    ChatBarManager.unpatch();
+    Style.remove();
+    Chatbar.unpatch();
   }
 
   getSettingsPanel() {
-    return createElement(UIManager.SettingsModal);
+    return createElement(UI.SettingsModal);
   }
 };
