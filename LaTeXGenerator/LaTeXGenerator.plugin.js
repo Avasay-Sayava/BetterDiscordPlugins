@@ -310,7 +310,7 @@ const CSS = `/*css*/
 /*!css*/`;
 
 class Settings {
-  static get(key, fallback=DEFAULT_SETTINGS[key]) {
+  static get(key, fallback = DEFAULT_SETTINGS[key]) {
     return Data.load(Plugin.KEY, key) ?? fallback;
   }
 
@@ -376,7 +376,7 @@ class ImageProcessor {
     }
   }
 }
-``
+
 class UI {
   static toast(message, type = TOAST_TYPES.INFO) {
     BdUI.showToast(`${Plugin.NAME}: ${message}`, { type });
