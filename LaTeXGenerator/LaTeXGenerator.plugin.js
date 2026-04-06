@@ -2018,6 +2018,7 @@ class UI {
   static SettingsModal() {
     const [renderKey, setRenderKey] = useState(0);
     const syntaxColors = Settings.getSyntaxColors();
+    const refreshSettingsModal = () => setRenderKey((k) => k + 1);
 
     return createElement(
       "div",
@@ -2025,12 +2026,6 @@ class UI {
       BdUI.buildSettingsPanel({
         settings: UI.buildSettingsSections(syntaxColors),
         onChange: (_categoryId, id, value) => {
-          const settingHandlers = {
-            [SETTINGS_KEYS.DEFAULT_COLOR]: Settings.setDefaultColor,
-            [SETTINGS_KEYS.DEFAULT_DPI]: Settings.setDefaultDpi,
-            [SETTINGS_KEYS.MAX_RECENTS]: Settings.setMaxRecents,
-          };
-
           if (id === SETTINGS_KEYS.TERMS && value) {
             UI.openTermsModal({
               onCancel: () => setRenderKey((k) => k + 1),
@@ -2038,9 +2033,18 @@ class UI {
             return;
           }
 
-          const settingHandler = settingHandlers[id];
-          if (settingHandler) {
-            settingHandler(value);
+          if (id === SETTINGS_KEYS.DEFAULT_COLOR) {
+            Settings.setDefaultColor(value);
+            return;
+          }
+
+          if (id === SETTINGS_KEYS.DEFAULT_DPI) {
+            Settings.setDefaultDpi(value);
+            return;
+          }
+
+          if (id === SETTINGS_KEYS.MAX_RECENTS) {
+            Settings.setMaxRecents(value);
             return;
           }
 
