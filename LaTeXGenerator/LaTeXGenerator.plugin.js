@@ -3,11 +3,20 @@
  * @author Avasay-Sayava
  * @authorId 812235988659077120
  * @description Adds a button to the chat bar to generate and copy LaTeX equations as images.
- * @version 2.2.0
+ * @version 2.3.0
  * @source https://github.com/Avasay-Sayava/BetterDiscordPlugins/blob/main/LaTeXGenerator/LaTeXGenerator.plugin.js
  */
 
-const { React, Components, Webpack, Data, UI: BdUI, DOM, Patcher } = BdApi;
+const {
+  React,
+  Components,
+  Webpack,
+  Data,
+  UI: BdUI,
+  DOM,
+  Patcher,
+  Logger,
+} = BdApi;
 const { useState, useEffect, useRef, createElement } = React;
 const { Tooltip, ColorInput, SliderInput } = Components;
 
@@ -19,6 +28,12 @@ const DiscordClasses = {
   Icon: Webpack.getByKeys("iconContainer", "trinketsIcon"),
 };
 
+const ModalActions = Webpack.getByKeys(
+  "openModal",
+  "closeModal",
+  "closeAllModals",
+);
+
 const Plugin = {
   NAME: "LaTeX Generator",
   KEY: "LaTeXGenerator",
@@ -28,6 +43,20 @@ const Plugin = {
 const API = {
   NAME: "CodeCogs LaTeX API",
   URL: "https://latex.codecogs.com/",
+};
+
+const LATEX_PAYLOAD_FORMAT = (dpi, r, g, b, latex) =>
+  `\\dpi{${dpi}} \\color[RGB]{${r},${g},${b}} ${latex}`;
+
+const IMAGE_MIME_TYPE = "image/png";
+
+const ERROR_MESSAGES = {
+  CANVAS_CONTEXT_FAILED: "Failed to get canvas context.",
+  BLOB_CREATION_FAILED: "Failed to create PNG blob.",
+  CLIPBOARD_NOT_SUPPORTED:
+    "Clipboard image write is not supported in this environment.",
+  IMAGE_LOAD_FAILED: "Failed to load image from API.",
+  IMAGE_PROCESS_FAILED: "Failed to process image.",
 };
 
 const TOAST_TYPES = {
@@ -162,7 +191,11 @@ const SETTINGS_KEYS = {
   MATCHED_BRACE_COLOR: "matched-brace-color",
   DEFAULT_COLOR: "default-color",
   DEFAULT_DPI: "default-dpi",
+  RECENTS: "recents",
+  MAX_RECENTS: "max-recents",
 };
+
+const DEFAULT_MAX_RECENTS = 20;
 
 const SETTINGS_CATEGORIES = {
   GENERAL: "general",
@@ -260,11 +293,24 @@ const DEFAULT_SETTINGS = {
   [SETTINGS_KEYS.SYNTAX_COLORS]: DEFAULT_SYNTAX_COLORS,
   [SETTINGS_KEYS.DEFAULT_COLOR]: DEFAULT_LATEX_SETTINGS.color,
   [SETTINGS_KEYS.DEFAULT_DPI]: DEFAULT_LATEX_SETTINGS.dpi,
+  [SETTINGS_KEYS.MAX_RECENTS]: DEFAULT_MAX_RECENTS,
 };
 
 const LATEX_ICON = `<!--html-->
 <svg viewBox="0 -9 9 9" width="24" height="24" fill="none" stroke="currentColor" stroke-width="0.05" xmlns="http://www.w3.org/2000/svg">
   <path d="M2.15193-1.111831C2.797509-2.116065 3.000747-2.881196 3.156164-3.514819C3.574595-5.164633 4.028892-6.599253 4.770112-7.424159C4.913574-7.579577 5.009215-7.687173 5.391781-7.687173C6.216687-7.687173 6.240598-6.862267 6.240598-6.694894C6.240598-6.479701 6.180822-6.312329 6.180822-6.252553C6.180822-6.168867 6.252553-6.168867 6.264508-6.168867C6.455791-6.168867 6.77858-6.300374 7.07746-6.515567C7.292653-6.682939 7.400249-6.802491 7.400249-7.292653C7.400249-7.938232 7.065504-8.428394 6.396015-8.428394C6.01345-8.428394 4.961395-8.332752 3.789788-7.149191C2.833375-6.168867 2.271482-4.016936 2.044334-3.120299C1.829141-2.295392 1.733499-1.924782 1.374844-1.207472C1.291158-1.06401 .980324-.537983 .812951-.382565C.490162-.083686 .37061 .131507 .37061 .191283C.37061 .215193 .394521 .263014 .478207 .263014C.526027 .263014 .777086 .215193 1.08792 .011955C1.291158-.107597 1.315068-.131507 1.590037-.418431C2.187796-.406476 2.606227-.298879 3.359402-.083686C3.969116 .083686 4.578829 .263014 5.188543 .263014C6.156912 .263014 7.137235-.466252 7.519801-.992279C7.758904-1.315068 7.830635-1.613948 7.830635-1.649813C7.830635-1.733499 7.758904-1.733499 7.746949-1.733499C7.555666-1.733499 7.268742-1.601993 7.065504-1.458531C6.742715-1.255293 6.718804-1.183562 6.647073-.980324C6.587298-.789041 6.515567-.6934 6.467746-.621669C6.372105-.478207 6.360149-.478207 6.180822-.478207C5.606974-.478207 5.009215-.657534 4.220174-.872727C3.88543-.968369 3.227895-1.159651 2.630137-1.159651C2.47472-1.159651 2.307347-1.147696 2.15193-1.111831Z" fill="currentColor"/>
+</svg>
+<!--!html-->`;
+
+const SETTINGS_ICON = `<!--html-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-gear-fill" viewBox="0 0 16 16">
+  <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
+</svg>
+<!--!html-->`;
+
+const RECENTS_ICON = `<!--html-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clock-fill" viewBox="0 0 16 16">
+  <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
 </svg>
 <!--!html-->`;
 
@@ -417,6 +463,27 @@ const CSS = `/*css*/
   gap: 20px;
 }
 
+.latex-generator-modal-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+.latex-generator-modal-action-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
 .latex-generator-textarea {
   background-color: var(--input-background-default);
   color: var(--text-default);
@@ -541,6 +608,110 @@ const CSS = `/*css*/
 .latex-generator-terms-link {
   color: var(--text-link);
 }
+
+.latex-generator-recents-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 16px;
+  min-height: 200px;
+}
+
+.latex-generator-recents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  max-height: 600px;
+}
+
+.latex-generator-recents-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background-color: transparent;
+  border: 1px solid var(--input-border-default);
+  border-radius: 8px;
+  transition: 0.2s;
+}
+
+.latex-generator-recents-item:hover {
+  background-color: var(--background-secondary-alt);
+}
+
+.latex-generator-recents-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.latex-generator-recents-latex {
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--text-default);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.latex-generator-recents-info {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.latex-generator-recents-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.latex-generator-recents-open-btn,
+.latex-generator-recents-delete-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  height: 34px;
+  transition: 0.2s;
+}
+
+.latex-generator-recents-open-btn {
+  background-color: var(--bd-brand);
+  color: #fff;
+}
+
+.latex-generator-recents-open-btn:hover {
+  background-color: var(--bd-brand-hover);
+}
+
+.latex-generator-recents-open-btn:active {
+  background-color: var(--bd-brand-active);
+}
+
+.latex-generator-recents-delete-btn {
+  background-color: transparent;
+  color: var(--text-default);
+  border: 1px solid var(--input-border-default);
+}
+
+.latex-generator-recents-delete-btn:hover {
+  border-color: #cd5c5c;
+  color: #cd5c5c;
+}
+
+.latex-generator-recents-footer {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--input-border-default);
+}
 /*!css*/`;
 
 const MIRROR_CSS = `/*css*/
@@ -566,7 +737,7 @@ const MIRROR_CSS = `/*css*/
 .latex-generator-editor-shell .latex-generator-textarea {
   grid-area: 1 / 1;
   margin: 0;
-  padding: 10px;
+  padding: 10px 48px 10px 10px;
   width: 100%;
   height: 100%;
   min-height: 200px;
@@ -646,7 +817,7 @@ class Settings {
   static normalizeLatexSettings(value = {}) {
     return {
       latex: typeof value?.latex === "string" ? value.latex : "",
-      dpi: Number.parseInt(value?.dpi, 10) || DEFAULT_LATEX_SETTINGS.dpi,
+      dpi: Number.parseInt(value?.dpi) || DEFAULT_LATEX_SETTINGS.dpi,
       color: this.normalizeColor(value?.color, DEFAULT_LATEX_SETTINGS.color),
     };
   }
@@ -680,7 +851,7 @@ class Settings {
 
   static getDefaultDpi() {
     return (
-      Number.parseInt(this.get(SETTINGS_KEYS.DEFAULT_DPI), 10) ||
+      Number.parseInt(this.get(SETTINGS_KEYS.DEFAULT_DPI)) ||
       DEFAULT_LATEX_SETTINGS.dpi
     );
   }
@@ -688,7 +859,21 @@ class Settings {
   static setDefaultDpi(value) {
     this.set(
       SETTINGS_KEYS.DEFAULT_DPI,
-      Number.parseInt(value, 10) || DEFAULT_LATEX_SETTINGS.dpi,
+      Number.parseInt(value) || DEFAULT_LATEX_SETTINGS.dpi,
+    );
+  }
+
+  static getMaxRecents() {
+    return (
+      Number.parseInt(this.get(SETTINGS_KEYS.MAX_RECENTS)) ||
+      DEFAULT_MAX_RECENTS
+    );
+  }
+
+  static setMaxRecents(value) {
+    this.set(
+      SETTINGS_KEYS.MAX_RECENTS,
+      Number.parseInt(value) || DEFAULT_MAX_RECENTS,
     );
   }
 
@@ -720,32 +905,54 @@ function clamp(l, value, u) {
   return min(max(value, l), u);
 }
 
-class ImageProcessor {
+class LatexProcessor {
   static generateApiRequest(latex, dpi, color) {
     if (!latex.trim()) return "";
 
     const activeColor = Color.from(color, DEFAULT_LATEX_SETTINGS.color);
     const { r, g, b } = activeColor.json;
-    const payload = `\\dpi{${dpi}} \\color[RGB]{${r},${g},${b}} ${latex}`;
+    const payload = LATEX_PAYLOAD_FORMAT(dpi, r, g, b, latex);
     return `${API.URL}png.latex?${encodeURIComponent(payload)}`;
+  }
+
+  static saveRecent(state) {
+    const { latex, dpi } = state;
+    const recents = Settings.get(SETTINGS_KEYS.RECENTS) ?? [];
+    const recent = {
+      latex: latex.trim(),
+      dpi,
+      timestamp: Date.now(),
+    };
+
+    const filtered = recents.filter(
+      (r) => r.latex !== recent.latex || r.dpi !== recent.dpi,
+    );
+
+    const updated = [recent, ...filtered].slice(0, Settings.getMaxRecents());
+    Settings.set(SETTINGS_KEYS.RECENTS, updated);
   }
 
   static copyToClipboard(state) {
     const { latex, color, dpi } = state;
     if (!latex?.trim()) return;
+    LatexProcessor.saveRecent(state);
 
     const fetched = this.generateApiRequest(latex, dpi, color);
 
     try {
-      const img = new Image();
+      let img = new Image();
       img.crossOrigin = "Anonymous";
+      const cleanup = () => {
+        img = null;
+      };
+
       img.onload = async () => {
         try {
           const canvas = document.createElement("canvas");
           canvas.width = img.width;
           canvas.height = img.height;
           const ctx = canvas.getContext("2d");
-          if (!ctx) throw new Error("Failed to get canvas context.");
+          if (!ctx) throw new Error(ERROR_MESSAGES.CANVAS_CONTEXT_FAILED);
 
           ctx.drawImage(img, 0, 0);
 
@@ -756,37 +963,38 @@ class ImageProcessor {
                 return;
               }
 
-              reject(new Error("Failed to create PNG blob."));
-            }, "image/png");
+              reject(new Error(ERROR_MESSAGES.BLOB_CREATION_FAILED));
+            }, IMAGE_MIME_TYPE);
           });
 
           if (
             !navigator.clipboard?.write ||
             typeof ClipboardItem === "undefined"
           ) {
-            throw new Error(
-              "Clipboard image write is not supported in this environment.",
-            );
+            throw new Error(ERROR_MESSAGES.CLIPBOARD_NOT_SUPPORTED);
           }
 
           await navigator.clipboard.write([
-            new ClipboardItem({ "image/png": blob }),
+            new ClipboardItem({ [IMAGE_MIME_TYPE]: blob }),
           ]);
           UI.toast("Image copied!", TOAST_TYPES.SUCCESS);
         } catch (err) {
-          console.error(err);
-          UI.toast("Failed to process image.", TOAST_TYPES.ERROR);
+          Logger.error(Plugin.NAME, err);
+          UI.toast(ERROR_MESSAGES.IMAGE_PROCESS_FAILED, TOAST_TYPES.ERROR);
+        } finally {
+          cleanup();
         }
       };
 
       img.onerror = () => {
-        UI.toast("Failed to load image from API.", TOAST_TYPES.ERROR);
+        UI.toast(ERROR_MESSAGES.IMAGE_LOAD_FAILED, TOAST_TYPES.ERROR);
+        cleanup();
       };
 
       img.src = fetched;
     } catch (err) {
-      console.error(err);
-      UI.toast("Failed to process image.", TOAST_TYPES.ERROR);
+      Logger.error(Plugin.NAME, err);
+      UI.toast(ERROR_MESSAGES.IMAGE_PROCESS_FAILED, TOAST_TYPES.ERROR);
     }
   }
 }
@@ -794,6 +1002,37 @@ class ImageProcessor {
 class UI {
   static toast(message, type = TOAST_TYPES.INFO) {
     BdUI.showToast(`${Plugin.NAME}: ${message}`, { type });
+  }
+
+  static rememberCursor(cursorIndex) {
+    if (!Number.isFinite(cursorIndex)) return;
+    UI.lastCursorIndex = max(0, Math.trunc(cursorIndex));
+  }
+
+  static focusGeneratorTextarea({
+    preferStoredCursor = true,
+    delay = 100,
+  } = {}) {
+    UI.clearPendingTimeouts();
+    UI.focusTimer = setTimeout(() => {
+      const textarea = document.querySelector(".latex-generator-textarea");
+      if (!textarea) {
+        UI.focusTimer = null;
+        return;
+      }
+
+      const lastCharIndex = textarea.value?.length ?? 0;
+      const cursorPosition =
+        preferStoredCursor && Number.isFinite(UI.lastCursorIndex)
+          ? clamp(0, UI.lastCursorIndex, lastCharIndex)
+          : lastCharIndex;
+
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(cursorPosition, cursorPosition);
+
+      UI.lastCursorIndex = cursorPosition;
+      UI.focusTimer = null;
+    }, delay);
   }
 
   static clearPendingTimeouts() {
@@ -1042,6 +1281,7 @@ class UI {
   static buildSettingsSections(syntaxColors) {
     const defaultColor = Settings.getDefaultColor();
     const defaultDpi = Settings.getDefaultDpi();
+    const maxRecents = Settings.getMaxRecents();
 
     return [
       {
@@ -1091,6 +1331,16 @@ class UI {
             max: 1200,
             markers: [100, 250, 500, 800, 1200],
           },
+          {
+            type: "slider",
+            id: SETTINGS_KEYS.MAX_RECENTS,
+            name: "Max Recents",
+            note: "Maximum number of recent equations to keep.",
+            value: maxRecents,
+            min: 1,
+            max: 100,
+            markers: [1, 10, 20, 50, 100],
+          },
         ],
       },
       {
@@ -1128,7 +1378,7 @@ class UI {
 
     const [fetched, setFetched] = useState(
       autoPreview && savedData.latex.trim()
-        ? ImageProcessor.generateApiRequest(
+        ? LatexProcessor.generateApiRequest(
             savedData.latex,
             defaultDpi,
             baseColor,
@@ -1138,6 +1388,12 @@ class UI {
 
     const highlightRef = useRef(null);
     const textareaRef = useRef(null);
+
+    const getCurrentCursorIndex = () => {
+      const textarea = textareaRef.current;
+      if (textarea) return textarea.selectionStart ?? cursorIndex;
+      return cursorIndex;
+    };
 
     const canPreview = previewLatex !== latex || previewDpi !== dpi;
 
@@ -1173,7 +1429,7 @@ class UI {
       if (latex.trim() === "") {
         setFetched("");
       } else {
-        setFetched(ImageProcessor.generateApiRequest(latex, dpi, baseColor));
+        setFetched(LatexProcessor.generateApiRequest(latex, dpi, baseColor));
       }
     };
 
@@ -1467,6 +1723,76 @@ class UI {
               className: "latex-generator-editor-shell",
               style: syntaxHighlightStyle,
             },
+            createElement(
+              "div",
+              { className: "latex-generator-modal-actions" },
+              createElement(
+                Tooltip,
+                { text: "Recents" },
+                ({ onMouseEnter, onMouseLeave }) =>
+                  createElement(
+                    "button",
+                    {
+                      type: "button",
+                      "aria-label": "Recent equations",
+                      className:
+                        "latex-generator-recents-btn latex-generator-modal-action-btn",
+                      onMouseEnter,
+                      onMouseLeave,
+                      onClick: () => {
+                        UI.rememberCursor(getCurrentCursorIndex());
+                        UI.openRecentsFromModal((recent) => {
+                          setLatex(recent.latex);
+                          setDpi(recent.dpi);
+                        });
+                      },
+                    },
+                    createElement(
+                      "div",
+                      {
+                        className: `${DiscordClasses.Button.button} ${DiscordClasses.ButtonWrapper.button}`,
+                      },
+                      createElement("div", {
+                        className: DiscordClasses.Icon.iconContainer,
+                        dangerouslySetInnerHTML: {
+                          __html: RECENTS_ICON,
+                        },
+                      }),
+                    ),
+                  ),
+              ),
+              createElement(
+                Tooltip,
+                { text: "Settings" },
+                ({ onMouseEnter, onMouseLeave }) =>
+                  createElement(
+                    "button",
+                    {
+                      type: "button",
+                      "aria-label": "Settings",
+                      className: "latex-generator-modal-action-btn",
+                      onMouseEnter,
+                      onMouseLeave,
+                      onClick: () => {
+                        UI.rememberCursor(getCurrentCursorIndex());
+                        UI.openSettingsFromModal();
+                      },
+                    },
+                    createElement(
+                      "div",
+                      {
+                        className: `${DiscordClasses.Button.button} ${DiscordClasses.ButtonWrapper.button}`,
+                      },
+                      createElement("div", {
+                        className: DiscordClasses.Icon.iconContainer,
+                        dangerouslySetInnerHTML: {
+                          __html: SETTINGS_ICON,
+                        },
+                      }),
+                    ),
+                  ),
+              ),
+            ),
             createElement("pre", {
               ref: highlightRef,
               "aria-hidden": true,
@@ -1513,13 +1839,17 @@ class UI {
           "div",
           { className: "latex-generator-inline-section" },
           createElement(
-            "button",
-            {
-              type: "button",
-              className: "latex-generator-insert-color-btn",
-              onClick: handleInsertColorBlock,
-            },
-            createElement("h1", {}, "Insert Color"),
+            "h1",
+            {},
+            createElement(
+              "button",
+              {
+                type: "button",
+                className: "latex-generator-insert-color-btn",
+                onClick: handleInsertColorBlock,
+              },
+              createElement("h1", {}, "Insert Color"),
+            ),
           ),
           createElement(
             "div",
@@ -1635,32 +1965,53 @@ class UI {
         cancelText: "Cancel",
         size: "bd-modal-large",
         onConfirm: () => {
-          if (!stateRef.current.latex) {
+          if (!stateRef.current.latex.trim()) {
             UI.toast("No image to copy!", TOAST_TYPES.ERROR);
             return;
           }
-          ImageProcessor.copyToClipboard(stateRef.current);
+          LatexProcessor.copyToClipboard(stateRef.current);
         },
       },
     );
 
-    UI.clearPendingTimeouts();
-    UI.focusTimer = setTimeout(() => {
-      const textarea = document.querySelector(".latex-generator-textarea");
-      if (!textarea) return;
+    UI.focusGeneratorTextarea({ preferStoredCursor: false });
+  }
 
-      if (
-        document.activeElement &&
-        typeof document.activeElement.blur === "function"
-      ) {
-        document.activeElement.blur();
-      }
+  static openSettingsFromModal() {
+    BdUI.showConfirmationModal(
+      `${Plugin.NAME} Settings`,
+      createElement(UI.SettingsModal),
+      {
+        confirmText: "Done",
+        cancelText: null,
+        size: "bd-modal-large",
+        onConfirm: () => UI.focusGeneratorTextarea(),
+        onClose: () => UI.focusGeneratorTextarea(),
+      },
+    );
+  }
 
-      textarea.focus({ preventScroll: true });
-      const cursorPosition = textarea.value?.length ?? 0;
-      textarea.setSelectionRange(cursorPosition, cursorPosition);
-      UI.focusTimer = null;
-    }, 60);
+  static openRecentsFromModal(onOpen) {
+    let modalKey;
+    const onOpenRecent = (recent) => {
+      onOpen(recent);
+      ModalActions?.closeModal?.(modalKey);
+      UI.focusGeneratorTextarea();
+    };
+
+    modalKey = BdUI.showConfirmationModal(
+      "Recent LaTeX Equations",
+      createElement(UI.RecentsModal, { onOpen: onOpenRecent }),
+      {
+        confirmText: "Done",
+        cancelText: null,
+        size: "bd-modal-large",
+        onConfirm: () => UI.focusGeneratorTextarea(),
+        onClose: () => UI.focusGeneratorTextarea(),
+      },
+    );
+
+    return modalKey;
   }
 
   static SettingsModal() {
@@ -1673,6 +2024,12 @@ class UI {
       BdUI.buildSettingsPanel({
         settings: UI.buildSettingsSections(syntaxColors),
         onChange: (_categoryId, id, value) => {
+          const settingHandlers = {
+            [SETTINGS_KEYS.DEFAULT_COLOR]: Settings.setDefaultColor,
+            [SETTINGS_KEYS.DEFAULT_DPI]: Settings.setDefaultDpi,
+            [SETTINGS_KEYS.MAX_RECENTS]: Settings.setMaxRecents,
+          };
+
           if (id === SETTINGS_KEYS.TERMS && value) {
             UI.openTermsModal({
               onCancel: () => setRenderKey((k) => k + 1),
@@ -1680,13 +2037,9 @@ class UI {
             return;
           }
 
-          if (id === SETTINGS_KEYS.DEFAULT_COLOR) {
-            Settings.setDefaultColor(value);
-            return;
-          }
-
-          if (id === SETTINGS_KEYS.DEFAULT_DPI) {
-            Settings.setDefaultDpi(value);
+          const settingHandler = settingHandlers[id];
+          if (settingHandler) {
+            settingHandler(value);
             return;
           }
 
@@ -1705,6 +2058,111 @@ class UI {
           Settings.set(id, value);
         },
       }),
+    );
+  }
+
+  static RecentsModal({ onOpen }) {
+    const [recents, setRecents] = useState(
+      Settings.get(SETTINGS_KEYS.RECENTS) ?? [],
+    );
+
+    const handleOpen = (recent) => {
+      onOpen(recent);
+    };
+
+    const handleDelete = (index) => {
+      const updated = recents.filter((_, i) => i !== index);
+      setRecents(updated);
+      Settings.set(SETTINGS_KEYS.RECENTS, updated);
+    };
+
+    const handleClearAll = () => {
+      BdUI.showConfirmationModal(
+        "Clear Recent Equations",
+        "Are you sure you want to delete all recent equations?",
+        {
+          danger: true,
+          confirmText: "Clear All",
+          cancelText: "Cancel",
+          onConfirm: () => {
+            setRecents([]);
+            Settings.set(SETTINGS_KEYS.RECENTS, []);
+          },
+        },
+      );
+    };
+
+    if (recents.length === 0) {
+      return createElement(
+        "div",
+        { className: "latex-generator-recents-empty" },
+        "No recent equations yet.",
+      );
+    }
+
+    return createElement(
+      "div",
+      { className: "latex-generator-recents-list" },
+      recents.map((recent, index) =>
+        createElement(
+          "div",
+          {
+            key: `recent-${index}`,
+            className: "latex-generator-recents-item",
+          },
+          createElement(
+            "div",
+            { className: "latex-generator-recents-content" },
+            createElement("div", {
+              className: "latex-generator-recents-latex",
+              dangerouslySetInnerHTML: {
+                __html: UI.highlightLatex(recent.latex || "", 0) || " ",
+              },
+            }),
+            createElement(
+              "div",
+              { className: "latex-generator-recents-info" },
+              `DPI: ${recent.dpi}`,
+            ),
+          ),
+          createElement(
+            "div",
+            { className: "latex-generator-recents-actions" },
+            createElement(
+              "button",
+              {
+                type: "button",
+                className: "latex-generator-recents-open-btn",
+                onClick: () => handleOpen(recent),
+              },
+              "Open",
+            ),
+            createElement(
+              "button",
+              {
+                type: "button",
+                className: "latex-generator-recents-delete-btn",
+                onClick: () => handleDelete(index),
+              },
+              "Delete",
+            ),
+          ),
+        ),
+      ),
+      recents.length > 0 &&
+        createElement(
+          "div",
+          { className: "latex-generator-recents-footer" },
+          createElement(
+            "button",
+            {
+              type: "button",
+              className: "latex-generator-recents-delete-btn",
+              onClick: handleClearAll,
+            },
+            "Clear All",
+          ),
+        ),
     );
   }
 }
@@ -1808,6 +2266,7 @@ class ChatBar {
 
 ChatBar.unpatchController = null;
 UI.focusTimer = null;
+UI.lastCursorIndex = null;
 
 class Style {
   static inject() {
