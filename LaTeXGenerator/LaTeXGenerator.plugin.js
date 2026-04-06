@@ -942,6 +942,7 @@ class LatexProcessor {
     try {
       let img = new Image();
       img.crossOrigin = "Anonymous";
+
       const cleanup = () => {
         img = null;
       };
