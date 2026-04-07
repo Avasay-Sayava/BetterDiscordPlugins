@@ -202,8 +202,9 @@ const SETTINGS_CATEGORIES = {
   SYNTAX: "syntax-highlighting",
 };
 
-const SETTINGS_SAVE_DELAY = 500;
-const PREVIEW_UPDATE_DELAY = 500;
+const SETTINGS_SAVE_DELAY = 500; // (ms)
+const PREVIEW_UPDATE_DELAY = 500; // (ms)
+const FOCUS_DELAY = 100; // (ms)
 
 const BRACKET_PAIRS = {
   "(": ")",
@@ -1386,7 +1387,7 @@ class UI {
         const cursorPosition = activeTextarea.value?.length ?? 0;
         activeTextarea.setSelectionRange(cursorPosition, cursorPosition);
         setCursorIndex(cursorPosition);
-      }, 100);
+      }, FOCUS_DELAY);
 
       return () => clearTimeout(timer);
     }, []);
