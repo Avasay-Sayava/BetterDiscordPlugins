@@ -210,11 +210,15 @@ const BRACKET_PAIRS = {
   "[": "]",
   "{": "}",
 };
+
+const BRACKET_OPENINGS = Object.entries(BRACKET_PAIRS);
 const BRACKET_CLOSINGS = Object.values(BRACKET_PAIRS);
 
 const BRACKET_CLOSE_TO_OPEN = Object.fromEntries(
-  Object.entries(BRACKET_PAIRS).map(([opening, closing]) => [closing, opening]),
+  BRACKET_OPENINGS.map(([opening, closing]) => [closing, opening]),
 );
+
+const LATEX_OPERATORS = ["^", "_", "=", "+", "-", "*", "/", "&"];
 
 const SYNTAX_TYPES = {
   COMMAND: "command",
@@ -803,101 +807,69 @@ const MIRROR_CSS = `/*css*/
 
 class Settings {
   static get(key, fallback = DEFAULT_SETTINGS[key]) {
-    return Data.load(Plugin.KEY, key) ?? fallback;
+    return this.normalize(key, Data.load(Plugin.KEY, key) ?? fallback);
   }
 
   static set(key, value) {
-    Data.save(Plugin.KEY, key, value);
+    Data.save(Plugin.KEY, key, this.serialize(this.normalize(key, value)));
   }
 
-  static normalizeColor(value, fallback) {
-    return Color.from(value, fallback);
+  static normalize(key, value) {
+    switch (key) {
+      case SETTINGS_KEYS.TERMS:
+      case SETTINGS_KEYS.AUTO_PREVIEW:
+      case SETTINGS_KEYS.AUTO_BRACKET_CLOSE:
+        return Boolean(value);
+
+      case SETTINGS_KEYS.LATEX_SETTINGS: {
+        return {
+          latex: typeof value?.latex === "string" ? value.latex : "",
+          dpi: Number.parseInt(value?.dpi) || DEFAULT_LATEX_SETTINGS.dpi,
+          color: Color.from(value?.color, DEFAULT_LATEX_SETTINGS.color),
+        };
+      }
+
+      case SETTINGS_KEYS.SYNTAX_COLORS: {
+        return Object.fromEntries(
+          Object.entries(DEFAULT_SYNTAX_COLORS).map(([syntaxKey, fallback]) => [
+            syntaxKey,
+            Color.from(value?.[syntaxKey], fallback),
+          ]),
+        );
+      }
+
+      case SETTINGS_KEYS.DEFAULT_COLOR:
+        return Color.from(value, DEFAULT_LATEX_SETTINGS.color);
+
+      case SETTINGS_KEYS.DEFAULT_DPI:
+        return Number.parseInt(value) || DEFAULT_LATEX_SETTINGS.dpi;
+
+      case SETTINGS_KEYS.MAX_RECENTS:
+        return Number.parseInt(value) || DEFAULT_MAX_RECENTS;
+
+      case SETTINGS_KEYS.RECENTS:
+        return Array.isArray(value) ? value : [];
+
+      default:
+        return value;
+    }
   }
 
-  static normalizeLatexSettings(value = {}) {
-    return {
-      latex: typeof value?.latex === "string" ? value.latex : "",
-      dpi: Number.parseInt(value?.dpi) || DEFAULT_LATEX_SETTINGS.dpi,
-      color: this.normalizeColor(value?.color, DEFAULT_LATEX_SETTINGS.color),
-    };
-  }
+  static serialize(value) {
+    if (value instanceof Color) return value.json;
+    if (Array.isArray(value))
+      return value.map((entry) => this.serialize(entry));
 
-  static getLatexSettings() {
-    return this.normalizeLatexSettings(this.get(SETTINGS_KEYS.LATEX_SETTINGS));
-  }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          this.serialize(entry),
+        ]),
+      );
+    }
 
-  static setLatexSettings(value) {
-    const normalized = this.normalizeLatexSettings(value);
-    this.set(SETTINGS_KEYS.LATEX_SETTINGS, {
-      latex: normalized.latex,
-      dpi: normalized.dpi,
-      color: normalized.color.json,
-    });
-  }
-
-  static getDefaultColor() {
-    return this.normalizeColor(
-      this.get(SETTINGS_KEYS.DEFAULT_COLOR),
-      DEFAULT_LATEX_SETTINGS.color,
-    );
-  }
-
-  static setDefaultColor(value) {
-    this.set(
-      SETTINGS_KEYS.DEFAULT_COLOR,
-      this.normalizeColor(value, DEFAULT_LATEX_SETTINGS.color).json,
-    );
-  }
-
-  static getDefaultDpi() {
-    return (
-      Number.parseInt(this.get(SETTINGS_KEYS.DEFAULT_DPI)) ||
-      DEFAULT_LATEX_SETTINGS.dpi
-    );
-  }
-
-  static setDefaultDpi(value) {
-    this.set(
-      SETTINGS_KEYS.DEFAULT_DPI,
-      Number.parseInt(value) || DEFAULT_LATEX_SETTINGS.dpi,
-    );
-  }
-
-  static getMaxRecents() {
-    return (
-      Number.parseInt(this.get(SETTINGS_KEYS.MAX_RECENTS)) ||
-      DEFAULT_MAX_RECENTS
-    );
-  }
-
-  static setMaxRecents(value) {
-    this.set(
-      SETTINGS_KEYS.MAX_RECENTS,
-      Number.parseInt(value) || DEFAULT_MAX_RECENTS,
-    );
-  }
-
-  static normalizeSyntaxColors(value = {}) {
-    return Object.fromEntries(
-      Object.entries(DEFAULT_SYNTAX_COLORS).map(([key, fallback]) => [
-        key,
-        this.normalizeColor(value?.[key], fallback),
-      ]),
-    );
-  }
-
-  static getSyntaxColors() {
-    return this.normalizeSyntaxColors(this.get(SETTINGS_KEYS.SYNTAX_COLORS));
-  }
-
-  static setSyntaxColors(value) {
-    const normalized = this.normalizeSyntaxColors(value);
-    this.set(
-      SETTINGS_KEYS.SYNTAX_COLORS,
-      Object.fromEntries(
-        Object.entries(normalized).map(([key, color]) => [key, color.json]),
-      ),
-    );
+    return value;
   }
 }
 
@@ -928,7 +900,10 @@ class LatexProcessor {
       (r) => r.latex !== recent.latex || r.dpi !== recent.dpi,
     );
 
-    const updated = [recent, ...filtered].slice(0, Settings.getMaxRecents());
+    const updated = [recent, ...filtered].slice(
+      0,
+      Settings.get(SETTINGS_KEYS.MAX_RECENTS),
+    );
     Settings.set(SETTINGS_KEYS.RECENTS, updated);
   }
 
@@ -1005,9 +980,9 @@ class UI {
     BdUI.showToast(`${Plugin.NAME}: ${message}`, { type });
   }
 
-  static rememberCursor(cursorIndex) {
-    if (!Number.isFinite(cursorIndex)) return;
-    UI.lastCursorIndex = max(0, Math.trunc(cursorIndex));
+  static rememberCursor(index) {
+    if (!Number.isFinite(index)) return;
+    UI.lastCursorIndex = max(0, Math.trunc(index));
   }
 
   static focusGeneratorTextarea({
@@ -1050,19 +1025,24 @@ class UI {
       .replace(/>/g, "&gt;");
   }
 
-  static buildBracketMatchMap(source, pairs, closingToOpening) {
+  static buildBracketMatchMap(source) {
+    const cached = UI.bracketMatching;
+    if (cached && cached.source === source) {
+      return cached.map;
+    }
+
     const stack = [];
-    const matchMap = new Map();
+    const map = new Map();
 
     for (let index = 0; index < source.length; index += 1) {
       const char = source[index];
 
-      if (Object.prototype.hasOwnProperty.call(pairs, char)) {
+      if (Object.prototype.hasOwnProperty.call(BRACKET_PAIRS, char)) {
         stack.push({ char, index });
         continue;
       }
 
-      if (!Object.prototype.hasOwnProperty.call(closingToOpening, char)) {
+      if (!Object.prototype.hasOwnProperty.call(BRACKET_CLOSE_TO_OPEN, char)) {
         continue;
       }
 
@@ -1071,47 +1051,52 @@ class UI {
       }
 
       const last = stack[stack.length - 1];
-      if (closingToOpening[char] !== last.char) {
+      if (BRACKET_CLOSE_TO_OPEN[char] !== last.char) {
         continue;
       }
 
       stack.pop();
-      matchMap.set(last.index, index);
-      matchMap.set(index, last.index);
+      map.set(last.index, index);
+      map.set(index, last.index);
     }
 
-    return matchMap;
+    UI.bracketMatching = {
+      source,
+      map,
+    };
+
+    return map;
   }
 
-  static findMatchingBracket(source, cursorIndex) {
+  static findMatchingBracket(source, cursor) {
     if (!source || !source.length) return null;
-
-    const pairs = BRACKET_PAIRS;
-    const closingToOpening = BRACKET_CLOSE_TO_OPEN;
 
     let bracketIndex = -1;
     if (
-      cursorIndex > 0 &&
-      (Object.prototype.hasOwnProperty.call(pairs, source[cursorIndex - 1]) ||
+      cursor > 0 &&
+      (Object.prototype.hasOwnProperty.call(
+        BRACKET_PAIRS,
+        source[cursor - 1],
+      ) ||
         Object.prototype.hasOwnProperty.call(
-          closingToOpening,
-          source[cursorIndex - 1],
+          BRACKET_CLOSE_TO_OPEN,
+          source[cursor - 1],
         ))
     ) {
-      bracketIndex = cursorIndex - 1;
+      bracketIndex = cursor - 1;
     } else if (
-      Object.prototype.hasOwnProperty.call(pairs, source[cursorIndex]) ||
+      Object.prototype.hasOwnProperty.call(BRACKET_PAIRS, source[cursor]) ||
       Object.prototype.hasOwnProperty.call(
-        closingToOpening,
-        source[cursorIndex],
+        BRACKET_CLOSE_TO_OPEN,
+        source[cursor],
       )
     ) {
-      bracketIndex = cursorIndex;
+      bracketIndex = cursor;
     }
 
     if (bracketIndex < 0) return null;
 
-    const matchMap = this.buildBracketMatchMap(source, pairs, closingToOpening);
+    const matchMap = this.buildBracketMatchMap(source);
     const pairIndex = matchMap.get(bracketIndex);
     if (typeof pairIndex !== "number") return null;
 
@@ -1120,21 +1105,12 @@ class UI {
       : [bracketIndex, pairIndex];
   }
 
-  static highlightLatex(latex, cursorIndex = 0) {
+  static highlightLatex(latex, cursor = 0) {
     const source = latex || "";
     if (!source) return "";
 
-    const operators = new Set(["^", "_", "=", "+", "-", "*", "/", "&"]);
-    const pairs = {
-      "{": "}",
-      "[": "]",
-      "(": ")",
-    };
-    const closingToOpening = Object.fromEntries(
-      Object.entries(pairs).map(([opening, closing]) => [closing, opening]),
-    );
-    const matchingPair = this.findMatchingBracket(source, cursorIndex);
-    const matchedIndexes = new Set(matchingPair || []);
+    const matchingPair = this.findMatchingBracket(source, cursor);
+    const matched = new Set(matchingPair || []);
 
     const spans = [];
     const braceStack = [];
@@ -1167,11 +1143,11 @@ class UI {
         continue;
       }
 
-      if (Object.prototype.hasOwnProperty.call(pairs, char)) {
+      if (Object.prototype.hasOwnProperty.call(BRACKET_PAIRS, char)) {
         const token = {
           value: char,
           type: SYNTAX_TYPES.BRACE,
-          matched: matchedIndexes.has(index),
+          matched: matched.has(index),
         };
         braceStack.push(token);
         spans.push(token);
@@ -1179,29 +1155,32 @@ class UI {
         continue;
       }
 
-      if (Object.prototype.hasOwnProperty.call(closingToOpening, char)) {
+      if (Object.prototype.hasOwnProperty.call(BRACKET_CLOSE_TO_OPEN, char)) {
         const matchingOpen = braceStack.length
           ? braceStack[braceStack.length - 1]
           : null;
-        if (matchingOpen && matchingOpen.value === closingToOpening[char]) {
+        if (
+          matchingOpen &&
+          matchingOpen.value === BRACKET_CLOSE_TO_OPEN[char]
+        ) {
           spans.push({
             value: char,
             type: SYNTAX_TYPES.BRACE,
-            matched: matchedIndexes.has(index),
+            matched: matched.has(index),
           });
           braceStack.pop();
         } else {
           spans.push({
             value: char,
             type: SYNTAX_TYPES.ERROR,
-            matched: matchedIndexes.has(index),
+            matched: matched.has(index),
           });
         }
         index += 1;
         continue;
       }
 
-      if (operators.has(char)) {
+      if (LATEX_OPERATORS.includes(char)) {
         pushToken(SYNTAX_TYPES.OPERATOR, char);
         index += 1;
         continue;
@@ -1221,9 +1200,12 @@ class UI {
       while (
         end < source.length &&
         source[end] !== "\\" &&
-        !Object.prototype.hasOwnProperty.call(pairs, source[end]) &&
-        !Object.prototype.hasOwnProperty.call(closingToOpening, source[end]) &&
-        !operators.has(source[end]) &&
+        !Object.prototype.hasOwnProperty.call(BRACKET_PAIRS, source[end]) &&
+        !Object.prototype.hasOwnProperty.call(
+          BRACKET_CLOSE_TO_OPEN,
+          source[end],
+        ) &&
+        !LATEX_OPERATORS.includes(source[end]) &&
         !/\d/.test(source[end])
       ) {
         end += 1;
@@ -1258,31 +1240,14 @@ class UI {
     );
   }
 
-  static getSyntaxColorSettingById(settingId) {
-    return SYNTAX_COLOR_SETTINGS.find((entry) => entry.id === settingId);
-  }
-
-  static buildSyntaxColorSettings(syntaxColors) {
-    return SYNTAX_COLOR_SETTINGS.map((entry) => {
-      const value = syntaxColors[entry.key] ?? DEFAULT_SYNTAX_COLORS[entry.key];
-      const defaultColor = DEFAULT_SYNTAX_COLORS[entry.key];
-
-      return {
-        type: "color",
-        id: entry.id,
-        name: entry.name,
-        note: entry.note,
-        value: value.hex,
-        defaultValue: defaultColor.hex,
-        colors: [],
-      };
-    });
+  static getSyntaxColorSettingById(id) {
+    return SYNTAX_COLOR_SETTINGS.find((entry) => entry.id === id);
   }
 
   static buildSettingsSections(syntaxColors) {
-    const defaultColor = Settings.getDefaultColor();
-    const defaultDpi = Settings.getDefaultDpi();
-    const maxRecents = Settings.getMaxRecents();
+    const defaultColor = Settings.get(SETTINGS_KEYS.DEFAULT_COLOR);
+    const defaultDpi = Settings.get(SETTINGS_KEYS.DEFAULT_DPI);
+    const maxRecents = Settings.get(SETTINGS_KEYS.MAX_RECENTS);
 
     return [
       {
@@ -1350,19 +1315,33 @@ class UI {
         name: "Syntax Highlighting",
         shown: true,
         collapsible: true,
-        settings: UI.buildSyntaxColorSettings(syntaxColors),
+        settings: SYNTAX_COLOR_SETTINGS.map((entry) => {
+          const value =
+            syntaxColors[entry.key] ?? DEFAULT_SYNTAX_COLORS[entry.key];
+          const defaultColor = DEFAULT_SYNTAX_COLORS[entry.key];
+
+          return {
+            type: "color",
+            id: entry.id,
+            name: entry.name,
+            note: entry.note,
+            value: value.hex,
+            defaultValue: defaultColor.hex,
+            colors: [],
+          };
+        }),
       },
     ];
   }
 
   static LatexModalContent({ stateRef }) {
-    const savedData = Settings.getLatexSettings();
+    const savedData = Settings.get(SETTINGS_KEYS.LATEX_SETTINGS);
 
-    const baseColor = Settings.getDefaultColor();
-    const defaultDpi = Settings.getDefaultDpi();
+    const baseColor = Settings.get(SETTINGS_KEYS.DEFAULT_COLOR);
+    const defaultDpi = Settings.get(SETTINGS_KEYS.DEFAULT_DPI);
     const autoPreview = Settings.get(SETTINGS_KEYS.AUTO_PREVIEW);
     const autoBracketClose = Settings.get(SETTINGS_KEYS.AUTO_BRACKET_CLOSE);
-    const syntaxColors = Settings.getSyntaxColors();
+    const syntaxColors = Settings.get(SETTINGS_KEYS.SYNTAX_COLORS);
 
     const [latex, setLatex] = useState(savedData.latex);
     const [dpi, setDpi] = useState(defaultDpi);
@@ -1421,7 +1400,11 @@ class UI {
       };
 
       const timer = setTimeout(() => {
-        Settings.setLatexSettings({ latex, dpi, color: baseColor });
+        Settings.set(SETTINGS_KEYS.LATEX_SETTINGS, {
+          latex,
+          dpi,
+          color: baseColor,
+        });
       }, SETTINGS_SAVE_DELAY);
       return () => clearTimeout(timer);
     }, [latex, dpi, baseColor, fetched, stateRef]);
@@ -1951,8 +1934,8 @@ class UI {
   }
 
   static openGenerationModal() {
-    const defaultColor = Settings.getDefaultColor();
-    const defaultDpi = Settings.getDefaultDpi();
+    const defaultColor = Settings.get(SETTINGS_KEYS.DEFAULT_COLOR);
+    const defaultDpi = Settings.get(SETTINGS_KEYS.DEFAULT_DPI);
 
     const stateRef = {
       current: { latex: "", dpi: defaultDpi, color: defaultColor, fetched: "" },
@@ -1993,16 +1976,15 @@ class UI {
   }
 
   static openRecentsFromModal(onOpen) {
-    let modalKey;
-    const onOpenRecent = (recent) => {
-      onOpen(recent);
-      ModalActions?.closeModal?.(modalKey);
-      UI.focusGeneratorTextarea();
-    };
-
-    modalKey = BdUI.showConfirmationModal(
+    const modalKey = BdUI.showConfirmationModal(
       "Recent LaTeX Equations",
-      createElement(UI.RecentsModal, { onOpen: onOpenRecent }),
+      createElement(UI.RecentsModal, {
+        onOpen: (recent) => {
+          onOpen(recent);
+          ModalActions?.closeModal?.(modalKey);
+          UI.focusGeneratorTextarea();
+        },
+      }),
       {
         confirmText: "Done",
         cancelText: null,
@@ -2017,45 +1999,17 @@ class UI {
 
   static SettingsModal() {
     const [renderKey, setRenderKey] = useState(0);
-    const syntaxColors = Settings.getSyntaxColors();
-    const refreshSettingsModal = () => setRenderKey((k) => k + 1);
+    const syntaxColors = Settings.get(SETTINGS_KEYS.SYNTAX_COLORS);
 
     return createElement(
       "div",
       { key: renderKey, className: "latex-generator-settings" },
       BdUI.buildSettingsPanel({
         settings: UI.buildSettingsSections(syntaxColors),
-        onChange: (_categoryId, id, value) => {
+        onChange: (_category, id, value) => {
           if (id === SETTINGS_KEYS.TERMS && value) {
             UI.openTermsModal({
               onCancel: () => setRenderKey((k) => k + 1),
-            });
-            return;
-          }
-
-          if (id === SETTINGS_KEYS.DEFAULT_COLOR) {
-            Settings.setDefaultColor(value);
-            return;
-          }
-
-          if (id === SETTINGS_KEYS.DEFAULT_DPI) {
-            Settings.setDefaultDpi(value);
-            return;
-          }
-
-          if (id === SETTINGS_KEYS.MAX_RECENTS) {
-            Settings.setMaxRecents(value);
-            return;
-          }
-
-          const syntaxColorSetting = UI.getSyntaxColorSettingById(id);
-          if (syntaxColorSetting) {
-            Settings.setSyntaxColors({
-              ...Settings.getSyntaxColors(),
-              [syntaxColorSetting.key]: Color.from(
-                value,
-                DEFAULT_SYNTAX_COLORS[syntaxColorSetting.key],
-              ),
             });
             return;
           }
@@ -2071,17 +2025,13 @@ class UI {
       Settings.get(SETTINGS_KEYS.RECENTS) ?? [],
     );
 
-    const handleOpen = (recent) => {
-      onOpen(recent);
-    };
-
-    const handleDelete = (index) => {
+    const deleteRecent = (index) => {
       const updated = recents.filter((_, i) => i !== index);
       setRecents(updated);
       Settings.set(SETTINGS_KEYS.RECENTS, updated);
     };
 
-    const handleClearAll = () => {
+    const clearRecents = () => {
       BdUI.showConfirmationModal(
         "Clear Recent Equations",
         "Are you sure you want to delete all recent equations?",
@@ -2138,7 +2088,7 @@ class UI {
               {
                 type: "button",
                 className: "latex-generator-recents-open-btn",
-                onClick: () => handleOpen(recent),
+                onClick: () => onOpen(recent),
               },
               "Open",
             ),
@@ -2147,7 +2097,7 @@ class UI {
               {
                 type: "button",
                 className: "latex-generator-recents-delete-btn",
-                onClick: () => handleDelete(index),
+                onClick: () => deleteRecent(index),
               },
               "Delete",
             ),
@@ -2163,7 +2113,7 @@ class UI {
             {
               type: "button",
               className: "latex-generator-recents-delete-btn",
-              onClick: handleClearAll,
+              onClick: clearRecents,
             },
             "Clear All",
           ),
@@ -2272,6 +2222,7 @@ class ChatBar {
 ChatBar.unpatchController = null;
 UI.focusTimer = null;
 UI.lastCursorIndex = null;
+UI.bracketMatching = null;
 
 class Style {
   static inject() {
