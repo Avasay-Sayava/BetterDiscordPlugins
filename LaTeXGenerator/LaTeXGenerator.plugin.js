@@ -438,22 +438,9 @@ const CSS = `/*css*/
 }
 
 .latex-generator-insert-color-btn {
-  background-color: var(--bd-brand);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 12px;
+  padding: 12px 4px;
   font-size: 13px;
   font-weight: 600;
-  transition: background-color 0.2s;
-}
-
-.latex-generator-insert-color-btn:hover {
-  background-color: var(--bd-brand-hover);
-}
-
-.latex-generator-insert-color-btn:active {
-  background-color: var(--bd-brand-active);
 }
 
 .latex-generator-preview-wrapper {
@@ -505,30 +492,6 @@ const CSS = `/*css*/
   transition: border-color 150ms linear;
 }
 
-.latex-generator-textarea:focus { 
-  border-color: var(--bd-brand-active);
-}
-
-.latex-generator-textarea:hover:not(:focus) {
-  border-color: var(--bd-brand-hover);
-}
-
-.latex-generator-modal .bd-slider-wrap:hover > .bd-slider-track {
-  background-image: linear-gradient(var(--bd-brand-hover),var(--bd-brand-hover));
-}
-
-.latex-generator-modal .bd-slider-input:active ~ .bd-slider-track {
-  background-image: linear-gradient(var(--bd-brand-active),var(--bd-brand-active));
-}
-
-.latex-generator-settings .bd-slider-wrap:hover > .bd-slider-track {
-  background-image: linear-gradient(var(--bd-brand-hover), var(--bd-brand-hover));
-}
-
-.latex-generator-settings .bd-slider-input:active ~ .bd-slider-track {
-  background-image: linear-gradient(var(--bd-brand-active), var(--bd-brand-active));
-}
-
 .latex-generator-settings .bd-slider-wrap {
   width: 400px;
   max-width: 100%;
@@ -574,28 +537,15 @@ const CSS = `/*css*/
 }
 
 .latex-generator-preview-btn {
-  background-color: var(--bd-brand);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
   padding: 10px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background-color 0.2s, opacity 0.2s;
 }
 
-.latex-generator-preview-btn:hover:not(:disabled) {
-  background-color: var(--bd-brand-hover);
-}
-
-.latex-generator-preview-btn:active:not(:disabled) {
-  background-color: var(--bd-brand-active);
-}
-
-.latex-generator-preview-btn:disabled {
-  background-color: var(--input-border-default);
-  color: var(--text-muted);
-  cursor: not-allowed;
+@layer override {
+  .latex-generator-preview-btn:disabled {
+    background-color: var(--input-border-default) !important;
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
 }
 
 .latex-generator-terms-container {
@@ -678,26 +628,8 @@ const CSS = `/*css*/
 .latex-generator-recents-open-btn,
 .latex-generator-recents-delete-btn {
   padding: 6px 12px;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
   height: 34px;
   transition: 0.2s;
-}
-
-.latex-generator-recents-open-btn {
-  background-color: var(--bd-brand);
-  color: #fff;
-}
-
-.latex-generator-recents-open-btn:hover {
-  background-color: var(--bd-brand-hover);
-}
-
-.latex-generator-recents-open-btn:active {
-  background-color: var(--bd-brand-active);
 }
 
 .latex-generator-recents-delete-btn {
@@ -717,25 +649,26 @@ const CSS = `/*css*/
   padding: 12px 0;
   border-top: 1px solid var(--input-border-default);
 }
-/*!css*/`;
 
-const MIRROR_CSS = `/*css*/
+.latex-generator-box {
+  border: 1px solid var(--input-border-default);
+}
+
+.latex-generator-box:hover {
+  border-color: var(--input-border-default-hover);
+}
+
+.latex-generator-box:focus-within {
+  border-color: var(--input-border-active);
+}
+
 .latex-generator-editor-shell {
   position: relative;
   display: grid;
-  border: 1px solid var(--input-border-default);
   border-radius: 8px 8px 0 8px;
   overflow: hidden;
   background-color: var(--input-background-default);
   transition: border-color 150ms linear;
-}
-
-.latex-generator-editor-shell:hover {
-  border-color: var(--bd-brand-hover);
-}
-
-.latex-generator-editor-shell:focus-within {
-  border-color: var(--bd-brand-active);
 }
 
 .latex-generator-highlight,
@@ -779,7 +712,9 @@ const MIRROR_CSS = `/*css*/
   color: transparent;
   caret-color: var(--text-default);
 }
+/*!css*/`;
 
+const MIRROR_CSS = `/*css*/
 .latex-generator-token--command {
   color: var(--latex-token-command, ${DEFAULT_SYNTAX_COLORS[SYNTAX_TYPES.COMMAND].hex});
 }
@@ -1551,7 +1486,7 @@ class UI {
       if (key in BRACKET_PAIRS) {
         const nextText = latex.slice(end);
         const nextChar = nextText[0] ?? "";
-        const wsOrEnd = nextText === "" || /[ \r\n]/.test(nextChar);
+        const wsOrEnd = nextText === "" || /\W/.test(nextChar);
         const nextIsClosing = BRACKET_CLOSINGS.includes(nextChar);
         const scope = getEnclosingScope(start);
 
@@ -1638,7 +1573,7 @@ class UI {
 
       createElement(
         "div",
-        { className: "latex-generator-preview" },
+        { className: "latex-generator-preview latex-generator-box" },
         createElement(
           "div",
           { className: "latex-generator-preview-parent" },
@@ -1684,7 +1619,8 @@ class UI {
                   createElement(
                     "button",
                     {
-                      className: "latex-generator-preview-btn",
+                      className:
+                        "bd-button bd-button-filled bd-button-color-brand latex-generator-preview-btn",
                       disabled: !canPreview,
                       onClick: handlePreview,
                     },
@@ -1705,7 +1641,7 @@ class UI {
           createElement(
             "div",
             {
-              className: "latex-generator-editor-shell",
+              className: "latex-generator-editor-shell latex-generator-box",
               style: syntaxHighlightStyle,
             },
             createElement(
@@ -1830,7 +1766,8 @@ class UI {
               "button",
               {
                 type: "button",
-                className: "latex-generator-insert-color-btn",
+                className:
+                  "latex-generator-insert-color-btn bd-button bd-button-filled bd-button-color-brand",
                 onClick: handleInsertColorBlock,
               },
               createElement("h1", {}, "Insert Color"),
@@ -2064,7 +2001,7 @@ class UI {
           "div",
           {
             key: `recent-${index}`,
-            className: "latex-generator-recents-item",
+            className: "latex-generator-recents-item latex-generator-box",
           },
           createElement(
             "div",
@@ -2088,7 +2025,8 @@ class UI {
               "button",
               {
                 type: "button",
-                className: "latex-generator-recents-open-btn",
+                className:
+                  "latex-generator-recents-open-btn bd-button bd-button-filled bd-button-color-brand",
                 onClick: () => onOpen(recent),
               },
               "Open",
@@ -2097,7 +2035,7 @@ class UI {
               "button",
               {
                 type: "button",
-                className: "latex-generator-recents-delete-btn",
+                className: "latex-generator-recents-delete-btn bd-button",
                 onClick: () => deleteRecent(index),
               },
               "Delete",
@@ -2113,7 +2051,7 @@ class UI {
             "button",
             {
               type: "button",
-              className: "latex-generator-recents-delete-btn",
+              className: "latex-generator-recents-delete-btn bd-button",
               onClick: clearRecents,
             },
             "Clear All",
