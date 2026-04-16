@@ -654,10 +654,6 @@ const CSS = `/*css*/
   border: 1px solid var(--input-border-default);
 }
 
-.latex-generator-box:hover {
-  border-color: var(--input-border-default-hover);
-}
-
 .latex-generator-box:focus-within {
   border-color: var(--input-border-active);
 }
