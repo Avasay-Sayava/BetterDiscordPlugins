@@ -17,9 +17,9 @@ const {
   Patcher,
   Logger,
 } = BdApi;
+
 const { useState, useEffect, useRef, createElement } = React;
 const { Tooltip, ColorInput, SliderInput } = Components;
-
 const { min, max } = Math;
 
 const DiscordClasses = {
@@ -655,7 +655,7 @@ const CSS = `/*css*/
 }
 
 .latex-generator-box:focus-within {
-  border-color: var(--input-border-active);
+  border-color: var(--text-link);
 }
 
 .latex-generator-editor-shell {
