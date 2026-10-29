@@ -2,8 +2,8 @@
  * @name LaTeX Generator
  * @author Avasay-Sayava
  * @authorId 812235988659077120
- * @description Adds a button to the chat bar to generate and copy LaTeX equations as images.
- * @version 2.3.1
+ * @description Modified build: reliable chat-bar button for generating and copying LaTeX equation images.
+ * @version 2.3.2
  * @source https://github.com/Avasay-Sayava/BetterDiscordPlugins/blob/main/LaTeXGenerator/LaTeXGenerator.plugin.js
  */
 
@@ -1667,10 +1667,10 @@ class UI {
                     createElement(
                       "div",
                       {
-                        className: `${DiscordClasses.Button.button} ${DiscordClasses.ButtonWrapper.button}`,
+                        className: `${(DiscordClasses.Button?.button || "")} ${(DiscordClasses.ButtonWrapper?.button || "")}`,
                       },
                       createElement("div", {
-                        className: DiscordClasses.Icon.iconContainer,
+                        className: (DiscordClasses.Icon?.iconContainer || ""),
                         dangerouslySetInnerHTML: {
                           __html: RECENTS_ICON,
                         },
@@ -1698,10 +1698,10 @@ class UI {
                     createElement(
                       "div",
                       {
-                        className: `${DiscordClasses.Button.button} ${DiscordClasses.ButtonWrapper.button}`,
+                        className: `${(DiscordClasses.Button?.button || "")} ${(DiscordClasses.ButtonWrapper?.button || "")}`,
                       },
                       createElement("div", {
-                        className: DiscordClasses.Icon.iconContainer,
+                        className: (DiscordClasses.Icon?.iconContainer || ""),
                         dangerouslySetInnerHTML: {
                           __html: SETTINGS_ICON,
                         },
@@ -1800,10 +1800,10 @@ class UI {
           createElement(
             "div",
             {
-              className: `${DiscordClasses.Button.button} ${DiscordClasses.ButtonWrapper.button}`,
+              className: `${(DiscordClasses.Button?.button || "")} ${(DiscordClasses.ButtonWrapper?.button || "")}`,
             },
             createElement("div", {
-              className: DiscordClasses.Icon.iconContainer,
+              className: (DiscordClasses.Icon?.iconContainer || ""),
               dangerouslySetInnerHTML: { __html: LATEX_ICON },
             }),
           ),
@@ -2058,103 +2058,186 @@ class UI {
 }
 
 class ChatBar {
-  static resolveButtons(module) {
-    if (!module) return null;
+  // Discord regularly changes its chat-bar React components. Insert a native
+  // button into the visible composer toolbar instead of patching a private render.
+  static findComposers() {
+    const editors = document.querySelectorAll(
+      'form [data-slate-editor="true"], ' +
+      'form [role="textbox"][contenteditable="true"], ' +
+      '[class*="channelTextArea"] [data-slate-editor="true"], ' +
+      '[class*="channelTextArea"] [role="textbox"][contenteditable="true"], ' +
+      'form textarea[placeholder*="Message" i]'
+    );
 
-    if (typeof module?.type === "function") return module;
-    if (typeof module?.A?.type === "function") return module.A;
-    if (typeof module?.default?.type === "function") return module.default;
-    if (typeof module?.default?.A?.type === "function") return module.default.A;
+    const roots = new Set();
+    for (const editor of editors) {
+      const root = editor.closest("form") ||
+        editor.closest('[class*="channelTextArea"]');
 
-    return null;
+      // Avoid injecting a button into a modal, search box, or disabled composer.
+      if (!root || editor.closest('[role="dialog"]')) continue;
+      if (editor.getAttribute("aria-disabled") === "true") continue;
+      if (root.getAttribute("aria-disabled") === "true") continue;
+      roots.add(root);
+    }
+    return roots;
+  }
+
+  static findMount(root) {
+    // Prefer the message toolbar that contains Discord's picker buttons.
+    const actionButtons = Array.from(root.querySelectorAll('button, [role="button"]'));
+    const picker = actionButtons.find((button) =>
+      /emoji|gif|sticker|gift|apps/i.test(
+        [button.getAttribute("aria-label"), button.getAttribute("title")]
+          .filter(Boolean).join(" ")
+      )
+    );
+
+    const toolbar = picker?.closest('[class*="buttons_"]') ||
+      picker?.closest('[class*="buttons-"]') ||
+      picker?.closest('[class*="buttons "]');
+
+    if (toolbar && root.contains(toolbar)) {
+      return { container: toolbar, anchor: null };
+    }
+
+    // Discord can localize aria labels. Fall back to its stable class prefix.
+    const toolbars = Array.from(root.querySelectorAll(
+      '[class*="buttons_"], [class*="buttons-"]'
+    )).filter((item) => item.querySelector('button, [role="button"]'));
+
+    if (toolbars.length) {
+      return { container: toolbars[toolbars.length - 1], anchor: null };
+    }
+
+    // If Discord renames the toolbar classes, place the button adjacent to a
+    // known picker control, rather than inserting it into the text editor.
+    if (picker?.parentElement?.parentElement) {
+      return { container: picker.parentElement.parentElement,
+               anchor: picker.parentElement.nextSibling };
+    }
+
+    // Last resort: use the composer action/attachment button area.
+    const action = actionButtons.find((button) =>
+      /attach|upload|add|send/i.test(
+        [button.getAttribute("aria-label"), button.getAttribute("title")]
+          .filter(Boolean).join(" ")
+      )
+    );
+    if (action?.parentElement?.parentElement) {
+      return { container: action.parentElement.parentElement,
+               anchor: action.parentElement.nextSibling };
+    }
+
+    // In compact/experimental layouts, controls may all be hidden. Prefer
+    // the composer's inner row rather than silently giving up.
+    const inner = root.querySelector('[class*="inner_"]');
+    if (inner) return { container: inner, anchor: null };
+
+    // Final compatibility fallback: make the button accessible in the form.
+    return { container: root, anchor: null };
+  }
+
+  static makeButton() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "latex-generator-chatbar-button";
+    button.setAttribute("aria-label", "Insert LaTeX");
+    button.setAttribute("title", "Insert LaTeX");
+    button.setAttribute("data-latex-generator-button", "true");
+    button.innerHTML = LATEX_ICON.replace(/<!--!?html-->/g, "").trim();
+
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        UI.handleChatBarClick();
+      } catch (error) {
+        Logger.error(Plugin.NAME, error);
+        UI.toast("Could not open the LaTeX editor", TOAST_TYPES.ERROR);
+      }
+    });
+
+    return button;
+  }
+
+  static ensureButtons() {
+    if (!ChatBar.running) return;
+    const roots = ChatBar.findComposers();
+
+    // Prune old nodes after Discord switches channels or recreates the form.
+    for (const [root, button] of ChatBar.buttons) {
+      if (!roots.has(root) || !root.isConnected) {
+        button.remove();
+        ChatBar.buttons.delete(root);
+      }
+    }
+
+    for (const root of roots) {
+      const target = ChatBar.findMount(root);
+      if (!target) continue;
+
+      let button = ChatBar.buttons.get(root);
+      if (!button) {
+        button = ChatBar.makeButton();
+        ChatBar.buttons.set(root, button);
+      }
+
+      if (button.parentElement !== target.container || !button.isConnected) {
+        target.container.insertBefore(button, target.anchor || null);
+      }
+    }
+  }
+
+  static schedule(delay = 120) {
+    if (!ChatBar.running || ChatBar.timer !== null) return;
+    ChatBar.timer = setTimeout(() => {
+      ChatBar.timer = null;
+      ChatBar.ensureButtons();
+    }, delay);
+  }
+
+  static onMutation(mutation) {
+    if (!ChatBar.running || mutation?.type !== "childList") return;
+
+    // Ignore unrelated activity while all existing chat buttons are attached.
+    if (ChatBar.buttons.size &&
+        Array.from(ChatBar.buttons.values()).every((button) => button.isConnected)) {
+      const target = mutation.target;
+      const nearComposer = target?.closest?.('form, [class*="channelTextArea"]');
+      const composerAdded = Array.from(mutation.addedNodes || []).some((node) =>
+        node.nodeType === 1 && (
+          node.matches?.('form, [class*="channelTextArea"]') ||
+          node.querySelector?.('form [data-slate-editor], [class*="channelTextArea"]')
+        )
+      );
+      if (!nearComposer && !composerAdded) return;
+    }
+
+    ChatBar.schedule();
   }
 
   static patch() {
-    const applyPatch = (Buttons) => {
-      if (!Buttons || typeof Buttons.type !== "function") {
-        UI.toast(
-          "Failed to find chat bar to inject the button",
-          TOAST_TYPES.ERROR,
-        );
-        return;
-      }
-
-      Patcher.after(Plugin.PATCH_ID, Buttons, "type", (_, args, res) => {
-        if (
-          args.length !== 2 ||
-          args[0]?.disabled ||
-          !Object.values(CHAT_BAR_TYPES).includes(
-            args[0]?.type?.analyticsName,
-          ) ||
-          !Array.isArray(res?.props?.children)
-        ) {
-          return;
-        }
-
-        const exists = res.props.children.some(
-          (child) => child?.key === "latex-generator-button",
-        );
-        if (exists) return;
-
-        res.props.children.unshift(
-          createElement(UI.ChatBarButton, {
-            key: "latex-generator-button",
-          }),
-        );
-      });
-    };
-
-    const sourceMatch = Webpack.getBySource(
-      "type",
-      "showAllButtons",
-      "promotionsByType",
-    );
-
-    const fromSource = ChatBar.resolveButtons(sourceMatch);
-    if (fromSource) {
-      applyPatch(fromSource);
-      return;
-    }
-
-    if (
-      typeof Webpack.waitForModule !== "function" ||
-      !Webpack.Filters?.bySource
-    ) {
-      UI.toast(
-        "Failed to find chat bar to inject the button",
-        TOAST_TYPES.ERROR,
-      );
-      return;
-    }
-
-    ChatBar.unpatchController?.abort();
-    const controller = new AbortController();
-    ChatBar.unpatchController = controller;
-
-    Webpack.waitForModule(
-      Webpack.Filters.bySource("showAllButtons", "promotionsByType"),
-      {
-        defaultExport: false,
-        searchExports: true,
-        signal: controller.signal,
-      },
-    )
-      .then((module) => {
-        if (controller.signal.aborted) return;
-        const resolved = ChatBar.resolveButtons(module);
-        applyPatch(resolved);
-      })
-      .catch(() => {});
+    ChatBar.unpatch();
+    ChatBar.running = true;
+    ChatBar.ensureButtons();
+    ChatBar.schedule(250);
   }
 
   static unpatch() {
-    ChatBar.unpatchController?.abort();
-    ChatBar.unpatchController = null;
-    Patcher.unpatchAll(Plugin.PATCH_ID);
+    ChatBar.running = false;
+    if (ChatBar.timer !== null) {
+      clearTimeout(ChatBar.timer);
+      ChatBar.timer = null;
+    }
+    for (const button of ChatBar.buttons.values()) button.remove();
+    ChatBar.buttons.clear();
   }
 }
 
-ChatBar.unpatchController = null;
+ChatBar.running = false;
+ChatBar.timer = null;
+ChatBar.buttons = new Map();
 UI.focusTimer = null;
 UI.lastCursorIndex = null;
 UI.bracketMatching = null;
@@ -2163,11 +2246,46 @@ class Style {
   static inject() {
     DOM.addStyle(Plugin.PATCH_ID, CSS);
     DOM.addStyle(`${Plugin.PATCH_ID}-mirror`, MIRROR_CSS);
+    DOM.addStyle(`${Plugin.PATCH_ID}-chatbar`, `
+      .latex-generator-chatbar-button {
+        display: inline-flex !important;
+        flex: 0 0 32px !important;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        padding: 4px;
+        margin: 0 2px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--interactive-normal, var(--text-normal, #b5bac1));
+        cursor: pointer;
+        vertical-align: middle;
+        box-sizing: border-box;
+        transition: color 120ms ease, background 120ms ease;
+      }
+      .latex-generator-chatbar-button:hover {
+        color: var(--interactive-hover, var(--text-default, #fff));
+        background: var(--background-modifier-hover, rgba(255,255,255,.08));
+      }
+      .latex-generator-chatbar-button:focus-visible {
+        outline: 2px solid var(--brand-500, #5865f2);
+        outline-offset: 1px;
+      }
+      .latex-generator-chatbar-button svg {
+        display: block;
+        width: 24px;
+        height: 24px;
+        flex-shrink: 0;
+      }
+    `);
   }
 
   static remove() {
     DOM.removeStyle(Plugin.PATCH_ID);
     DOM.removeStyle(`${Plugin.PATCH_ID}-mirror`);
+    DOM.removeStyle(`${Plugin.PATCH_ID}-chatbar`);
   }
 }
 
@@ -2178,9 +2296,18 @@ module.exports = class LaTeXGeneratorPlugin {
   }
 
   stop() {
-    Style.remove();
     ChatBar.unpatch();
+    Style.remove();
     UI.clearPendingTimeouts();
+  }
+
+  // BetterDiscord calls these when the chat view changes or Discord mutates it.
+  onSwitch() {
+    ChatBar.schedule(80);
+  }
+
+  observer(mutation) {
+    ChatBar.onMutation(mutation);
   }
 
   getSettingsPanel() {
